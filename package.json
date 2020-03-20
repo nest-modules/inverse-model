@@ -1,0 +1,9 @@
+{
+  "name": "@nestjs-modules/inverse",
+  "version": "0.0.0",
+  "description": "We are focus on understanding the connection string to the database and generating a startup project.",
+  "main": "index.js",
+  "repository": "git@github.com:nest-modules/inverse-model.git",
+  "author": "juandav <e.juandav@gmail.com>",
+  "license": "MIT"
+}
