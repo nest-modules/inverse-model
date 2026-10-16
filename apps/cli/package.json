@@ -1,13 +1,42 @@
 {
   "name": "@nestjs-modules/inverse",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Generates a NestJS GraphQL starter project from an existing database.",
   "license": "MIT",
+  "author": "juandav <e.juandav@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nest-modules/inverse-model.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/nest-modules/inverse-model/tree/main/apps/cli#readme",
+  "bugs": {
+    "url": "https://github.com/nest-modules/inverse-model/issues"
+  },
+  "keywords": [
+    "nest",
+    "nestjs",
+    "nestjs-modules",
+    "graphql",
+    "database",
+    "generator",
+    "cli"
+  ],
   "type": "commonjs",
   "bin": {
     "inverse": "./dist/main.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "!dist/**/*.d.ts"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
@@ -30,10 +59,5 @@
     "rimraf": "6.1.3",
     "ts-jest": "29.4.14",
     "typescript": "6.0.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nest-modules/inverse-model"
-  },
-  "keywords": ["nest", "nestjs", "nestjs-modules", "graphql", "database", "generator", "cli"]
+  }
 }

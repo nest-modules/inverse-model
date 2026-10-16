@@ -1,20 +1,62 @@
 {
   "name": "@nestjs-modules/inverse-model",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Mounts a GraphQL API over an existing database from its connection string.",
   "license": "MIT",
+  "author": "juandav <e.juandav@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nest-modules/inverse-model.git",
+    "directory": "packages/inverse-model"
+  },
+  "homepage": "https://github.com/nest-modules/inverse-model#readme",
+  "bugs": {
+    "url": "https://github.com/nest-modules/inverse-model/issues"
+  },
+  "keywords": [
+    "nest",
+    "nestjs",
+    "nestjs-modules",
+    "graphql",
+    "database",
+    "postgres",
+    "mysql",
+    "mariadb",
+    "sqlserver",
+    "mongodb",
+    "typeorm"
+  ],
   "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./drivers": {
+      "types": "./dist/drivers.d.ts",
+      "default": "./dist/drivers.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
     "check": "biome check .",
     "test": "jest",
-    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js -c jest.integration.config.js"
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js -c jest.integration.config.js",
+    "prepack": "node -e \"fs.copyFileSync('../../README.md', 'README.md')\""
   },
   "devDependencies": {
     "@apollo/server": "5.5.1",

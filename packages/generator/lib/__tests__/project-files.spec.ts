@@ -1,5 +1,9 @@
 import { projectFiles } from '../templates/project';
 
+const {
+  version: LIBRARY_VERSION,
+} = require('@nestjs-modules/inverse-model/package.json');
+
 const DATABASE_URL = 'postgres://user:secret@localhost:5432/blog';
 
 describe('projectFiles', () => {
@@ -49,7 +53,7 @@ describe('projectFiles', () => {
 
     it('depends on the library and the GraphQL stack', () => {
       expect(pkg.dependencies).toMatchObject({
-        '@nestjs-modules/inverse-model': '^0.0.0',
+        '@nestjs-modules/inverse-model': `^${LIBRARY_VERSION}`,
         '@apollo/server': expect.any(String),
         '@nestjs/apollo': expect.any(String),
         '@nestjs/common': expect.any(String),

@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
+  databaseNameOf,
   generateProject,
   writeProject,
 } from '@nestjs-modules/inverse-generator';
@@ -11,8 +12,6 @@ interface GenerateOptions {
   name?: string;
 }
 
-const databaseName = (url: string) => new URL(url).pathname.replace(/^\//, '');
-
 @Command({
   name: 'generate',
   arguments: '<connection-string>',
@@ -21,10 +20,23 @@ const databaseName = (url: string) => new URL(url).pathname.replace(/^\//, '');
 })
 export class GenerateCommand extends CommandRunner {
   async run([connectionString]: string[], options: GenerateOptions) {
-    const name = options.name ?? databaseName(connectionString);
+    try {
+      await this.generate(connectionString, options);
+    } catch (error) {
+      console.error(`error: ${(error as Error).message}`);
+      process.exitCode = 1;
+    }
+  }
+
+  private async generate(connectionString: string, options: GenerateOptions) {
+    const databaseName = databaseNameOf(connectionString);
+    const name = options.name ?? databaseName;
     const outDir = resolve(options.out ?? name);
 
-    const existing = await readdir(outDir).catch(() => []);
+    const existing = await readdir(outDir).catch((error) => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    });
     if (existing.length > 0) {
       throw new Error(`${outDir} is not empty`);
     }

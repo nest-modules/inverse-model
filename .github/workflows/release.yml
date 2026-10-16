@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time; a newer push waits instead of cancelling a publish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version PR or publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the version branch and the release tags
+      pull-requests: write # opens the version PR
+      id-token: write # signs the npm provenance statement
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Publishes nothing that fails the unit tests; the build is reused by the release.
+      - run: pnpm build
+      - run: pnpm test
+      # With changesets in .changeset, opens or updates the "Version packages" PR.
+      # Without them (that PR was merged), builds and publishes every package
+      # whose version is not on npm yet, then tags the release.
+      - uses: changesets/action@v1
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          title: Version packages
+          commit: Version packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # pnpm tries npm trusted publishing (OIDC) first and falls back to this token.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PNPM_CONFIG_PROVENANCE: true

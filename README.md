@@ -169,6 +169,12 @@ If a port is taken, move it with `POSTGRES_PORT`, `MYSQL_PORT`, `MARIADB_PORT`, 
 | `packages/generator` | `@nestjs-modules/inverse-generator` | Files of that starter project |
 | `samples/blog` | | Small schema to try it against |
 
+### Releasing
+
+The three packages are versioned together with [Changesets](https://github.com/changesets/changesets). Describe a user-facing change with `pnpm changeset` and commit the file it writes. On `main`, the release workflow keeps a "Version packages" PR open that bumps the versions and fills each `CHANGELOG.md`; merging it publishes the new versions to npm with provenance and tags them. Package versions not yet on npm, such as the first `0.1.0`, are published on the next push to `main`.
+
+Publishing needs an npm automation token in the `NPM_TOKEN` repository secret, and *Allow GitHub Actions to create and approve pull requests* turned on under Settings → Actions. Once the packages exist on npm, you can add `nest-modules/inverse-model` with workflow `release.yml` as a trusted publisher on each package's npm settings page and delete the token: `pnpm publish` tries trusted publishing (OIDC) first and only falls back to `NPM_TOKEN`.
+
 ### License
 
 MIT

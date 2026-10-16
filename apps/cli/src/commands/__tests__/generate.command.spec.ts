@@ -9,6 +9,8 @@ import { GenerateCommand } from '../generate.command';
 
 jest.mock('node:fs/promises', () => ({ readdir: jest.fn() }));
 jest.mock('@nestjs-modules/inverse-generator', () => ({
+  databaseNameOf: jest.requireActual('@nestjs-modules/inverse-generator')
+    .databaseNameOf,
   generateProject: jest.fn(),
   writeProject: jest.fn(),
 }));
@@ -28,7 +30,19 @@ describe('GenerateCommand', () => {
     readdirMock.mockResolvedValue([]);
     generateProjectMock.mockReturnValue(FILES);
     jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    process.exitCode = undefined;
   });
+
+  afterAll(() => {
+    process.exitCode = undefined;
+  });
+
+  const expectFailure = (message: string | RegExp) => {
+    expect(console.error).toHaveBeenCalledWith(expect.stringMatching(message));
+    expect(process.exitCode).toBe(1);
+    expect(writeProjectMock).not.toHaveBeenCalled();
+  };
 
   it('names the project and its directory after the database', async () => {
     await command.run([URL], {});
@@ -78,11 +92,44 @@ describe('GenerateCommand', () => {
   it('refuses a non-empty output directory', async () => {
     readdirMock.mockResolvedValue(['package.json']);
 
-    await expect(command.run([URL], { out: 'existing' })).rejects.toThrow(
-      `${resolve('existing')} is not empty`,
-    );
+    await command.run([URL], { out: 'existing' });
+
+    expectFailure(`error: ${resolve('existing')} is not empty`);
     expect(generateProjectMock).not.toHaveBeenCalled();
-    expect(writeProjectMock).not.toHaveBeenCalled();
+  });
+
+  it('reports an output directory it cannot read', async () => {
+    readdirMock.mockRejectedValue(
+      Object.assign(new Error('EACCES: permission denied'), {
+        code: 'EACCES',
+      }),
+    );
+
+    await command.run([URL], {});
+
+    expectFailure('error: EACCES: permission denied');
+  });
+
+  it('rejects a connection string without a database name', async () => {
+    await command.run(['postgres://user:secret@localhost:5432'], {});
+
+    expectFailure(/^error: The connection string names no database/);
+    expect(readdirMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported protocol', async () => {
+    await command.run(['oracle://localhost/blog'], { name: 'blog' });
+
+    expectFailure(/^error: Unsupported database protocol: oracle/);
+  });
+
+  it('reports errors of the generator', async () => {
+    writeProjectMock.mockRejectedValue(new Error('disk full'));
+
+    await command.run([URL], {});
+
+    expect(console.error).toHaveBeenCalledWith('error: disk full');
+    expect(process.exitCode).toBe(1);
   });
 
   it('passes option values through unchanged', () => {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "changelog": "@changesets/changelog-git",
+  "commit": false,
+  "format": false,
+  "fixed": [
+    [
+      "@nestjs-modules/inverse-model",
+      "@nestjs-modules/inverse-generator",
+      "@nestjs-modules/inverse"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [],
+  "privatePackages": { "version": false, "tag": false }
+}

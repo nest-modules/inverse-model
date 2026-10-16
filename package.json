@@ -12,10 +12,14 @@
     "test": "turbo run test",
     "check": "turbo run check",
     "format": "biome format --write .",
-    "check:fix": "biome check --write ."
+    "check:fix": "biome check --write .",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@changesets/cli": "3.0.3",
     "turbo": "2.11.8",
     "typescript": "6.0.3"
   }

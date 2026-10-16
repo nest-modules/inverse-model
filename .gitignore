@@ -56,3 +56,6 @@ pnpm-debug.log*
 .env
 .env.*.local
 .env.local
+
+# copied from the root README on pack
+packages/inverse-model/README.md

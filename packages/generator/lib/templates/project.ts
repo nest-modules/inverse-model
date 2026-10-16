@@ -1,7 +1,16 @@
+import {
+  driverFor,
+  protocolOf,
+  SUPPORTED_PROTOCOLS,
+} from '@nestjs-modules/inverse-model/drivers';
 import type { GeneratedFile } from '../generate-project';
 
+// The generated project depends on the library this generator was released with.
+const { version: LIBRARY_VERSION } =
+  require('@nestjs-modules/inverse-model/package.json') as { version: string };
+
 const DEPENDENCIES = {
-  '@nestjs-modules/inverse-model': '^0.0.0',
+  '@nestjs-modules/inverse-model': `^${LIBRARY_VERSION}`,
   '@apollo/server': '5.5.1',
   '@as-integrations/express5': '1.1.2',
   '@nestjs/apollo': '14.0.3',
@@ -15,30 +24,16 @@ const DEPENDENCIES = {
   typeorm: '1.1.2',
 };
 
-const POSTGRES_DRIVER = { pg: '8.23.1' };
-const MYSQL_DRIVER = { mysql2: '3.24.6' };
-const SQLSERVER_DRIVER = { mssql: '12.7.2' };
-const MONGODB_DRIVER = { mongodb: '7.7.0' };
-
-// The driver package each adapter of the library loads.
-const DRIVERS: Record<string, Record<string, string>> = {
-  postgres: POSTGRES_DRIVER,
-  postgresql: POSTGRES_DRIVER,
-  mysql: MYSQL_DRIVER,
-  mariadb: MYSQL_DRIVER,
-  mssql: SQLSERVER_DRIVER,
-  sqlserver: SQLSERVER_DRIVER,
-  mongodb: MONGODB_DRIVER,
-  'mongodb+srv': MONGODB_DRIVER,
-};
-
+/** The driver package the library loads for the protocol of `databaseUrl`. */
 function driverOf(databaseUrl: string) {
-  const protocol = new URL(databaseUrl).protocol.replace(/:$/, '');
-  const driver = DRIVERS[protocol];
+  const protocol = protocolOf(databaseUrl);
+  const driver = driverFor(protocol);
   if (!driver) {
-    throw new Error(`Unsupported database protocol: ${protocol}`);
+    throw new Error(
+      `Unsupported database protocol: ${protocol} (supported: ${SUPPORTED_PROTOCOLS.join(', ')})`,
+    );
   }
-  return driver;
+  return { [driver.name]: driver.version };
 }
 
 const DEV_DEPENDENCIES = {

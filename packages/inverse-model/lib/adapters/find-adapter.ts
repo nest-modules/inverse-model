@@ -1,3 +1,4 @@
+import { type DriverPackage, driverFor, protocolOf } from '../drivers';
 import type { DatabaseAdapter } from './database-adapter.interface';
 import { mongodbAdapter } from './mongodb/mongodb.adapter';
 import { mariadbAdapter, mysqlAdapter } from './mysql/mysql.adapter';
@@ -12,9 +13,29 @@ const ADAPTERS: readonly DatabaseAdapter[] = [
   mongodbAdapter,
 ];
 
+const isMissing = (error: any, driver: DriverPackage) =>
+  error?.name === 'DriverPackageNotInstalledError' ||
+  (error?.code === 'MODULE_NOT_FOUND' &&
+    String(error.message).includes(`'${driver.name}'`));
+
+/** Turns a missing driver package into an error that names the package to install. */
+function withDriverHint(adapter: DatabaseAdapter, driver: DriverPackage) {
+  return {
+    ...adapter,
+    connect: (...args) =>
+      adapter.connect(...args).catch((error) => {
+        if (!isMissing(error, driver)) throw error;
+        throw new Error(
+          `The ${adapter.name} adapter needs the ${driver.name} package: npm install ${driver.name}@^${driver.version}`,
+          { cause: error },
+        );
+      }),
+  } satisfies DatabaseAdapter;
+}
+
 /** The adapter for the protocol of `url`. */
 export function findAdapter(url: string): DatabaseAdapter {
-  const protocol = new URL(url).protocol.replace(/:$/, '').toLowerCase();
+  const protocol = protocolOf(url);
   const adapter = ADAPTERS.find((candidate) =>
     candidate.protocols.includes(protocol),
   );
@@ -24,5 +45,6 @@ export function findAdapter(url: string): DatabaseAdapter {
       `Unsupported database protocol: ${protocol} (supported: ${supported.join(', ')})`,
     );
   }
-  return adapter;
+  const driver = driverFor(protocol);
+  return driver ? withDriverHint(adapter, driver) : adapter;
 }

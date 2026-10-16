@@ -1,19 +1,55 @@
 {
   "name": "@nestjs-modules/inverse-generator",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Writes the starter project of an inverse API.",
   "license": "MIT",
+  "author": "juandav <e.juandav@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nest-modules/inverse-model.git",
+    "directory": "packages/generator"
+  },
+  "homepage": "https://github.com/nest-modules/inverse-model/tree/main/packages/generator#readme",
+  "bugs": {
+    "url": "https://github.com/nest-modules/inverse-model/issues"
+  },
+  "keywords": [
+    "nest",
+    "nestjs",
+    "nestjs-modules",
+    "graphql",
+    "database",
+    "generator",
+    "scaffold"
+  ],
   "type": "commonjs",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
     "check": "biome check .",
     "test": "jest --coverage"
+  },
+  "dependencies": {
+    "@nestjs-modules/inverse-model": "workspace:^"
   },
   "devDependencies": {
     "@types/jest": "30.0.0",
