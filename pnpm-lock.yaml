@@ -163,6 +163,12 @@ importers:
       graphql:
         specifier: 17.0.2
         version: 17.0.2
+      mongodb:
+        specifier: 7.7.0
+        version: 7.7.0
+      mysql2:
+        specifier: 3.24.6
+        version: 3.24.6(@types/node@24.19.2)
       pg:
         specifier: 8.23.1
         version: 8.23.1

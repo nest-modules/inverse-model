@@ -45,7 +45,8 @@ const sqlServerAdapter = createSqlAdapter({
   name: 'mssql',
   protocols: ['mssql'],
   type: 'mssql',
-  systemSchemas: ['sys', 'INFORMATION_SCHEMA'],
+  tablesQuery: `SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS name
+    FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'`,
   fieldTypes: { int: 'Int', bit: 'Boolean', datetime2: 'DateTime' },
 });
 
@@ -67,6 +68,25 @@ pnpm build
 pnpm test
 pnpm check
 ```
+
+`compose.yaml` starts Postgres, MySQL, MariaDB and MongoDB with the blog sample loaded, and the sample app built from the `Dockerfile`. CI runs the same steps on every push and pull request:
+
+```sh
+docker compose up -d --wait postgres mysql mariadb mongodb
+
+# Adapter integration tests; a database without a URL is skipped
+POSTGRES_URL=postgres://inverse:inverse@localhost:5432/inverse_blog \
+MYSQL_URL=mysql://inverse:inverse@localhost:3306/inverse_blog \
+MARIADB_URL=mariadb://inverse:inverse@localhost:3307/inverse_blog \
+MONGODB_URL=mongodb://localhost:27017/inverse_blog \
+pnpm --filter @nestjs-modules/inverse-model test:integration
+
+# The app over one of them, then a create mutation through GraphQL
+DATABASE_URL=mongodb://mongodb:27017/inverse_blog docker compose up -d --build --wait app
+scripts/smoke-test.sh
+```
+
+If a port is taken, move it with `POSTGRES_PORT`, `MYSQL_PORT`, `MARIADB_PORT`, `MONGODB_PORT` or `APP_PORT`.
 
 | Path | Package | What it does |
 |---|---|---|

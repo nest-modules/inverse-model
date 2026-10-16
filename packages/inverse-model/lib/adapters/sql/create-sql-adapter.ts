@@ -18,8 +18,11 @@ export interface SqlAdapterOptions {
   name: string;
   protocols: readonly string[];
   type: DataSourceOptions['type'];
-  /** getTables() with no names also returns the catalogs of the server. */
-  systemSchemas: readonly string[];
+  /**
+   * Lists the tables to expose as one `name` column, schema-qualified where
+   * needed. getTables() with no names would crawl every schema of the server.
+   */
+  tablesQuery: string;
   /**
    * GraphQL type of a column type as TypeORM reports it. Anything not listed
    * (text, uuid, enums, and bigint and numeric, which drivers return as strings
@@ -66,15 +69,14 @@ export function createSqlAdapter(options: SqlAdapterOptions): DatabaseAdapter {
 
       const inspector = await new DataSource(dataSourceOptions).initialize();
       const queryRunner = inspector.createQueryRunner();
-      const allTables = await queryRunner.getTables().finally(async () => {
-        await queryRunner.release();
-        await inspector.destroy();
-      });
-
-      const tables = allTables.filter(
-        (table) =>
-          !options.systemSchemas.includes(table.schema ?? table.database ?? ''),
-      );
+      const tables = await queryRunner
+        .query(options.tablesQuery)
+        .then((rows: { name: string }[]) => rows.map((row) => row.name))
+        .then((names) => (names.length > 0 ? queryRunner.getTables(names) : []))
+        .finally(async () => {
+          await queryRunner.release();
+          await inspector.destroy();
+        });
 
       const dataSource = await new DataSource({
         ...dataSourceOptions,

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "exclude": ["lib/**/__tests__"]
+  "exclude": ["lib/**/__tests__", "lib/**/__integration__"]
 }

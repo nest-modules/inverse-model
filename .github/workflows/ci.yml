@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Build, lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check
+      - run: pnpm test
+
+  adapters:
+    name: Adapter integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Start the databases
+        run: docker compose up -d --wait postgres mysql mariadb mongodb
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @nestjs-modules/inverse-model test:integration
+        env:
+          POSTGRES_URL: postgres://inverse:inverse@localhost:5432/inverse_blog
+          MYSQL_URL: mysql://inverse:inverse@localhost:3306/inverse_blog
+          MARIADB_URL: mariadb://inverse:inverse@localhost:3307/inverse_blog
+          MONGODB_URL: mongodb://localhost:27017/inverse_blog
+      - name: Database logs
+        if: failure()
+        run: docker compose logs postgres mysql mariadb mongodb
+
+  docker:
+    name: Docker image on ${{ matrix.database }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - database: postgres
+            url: postgres://inverse:inverse@postgres:5432/inverse_blog
+          - database: mysql
+            url: mysql://inverse:inverse@mysql:3306/inverse_blog
+          - database: mariadb
+            url: mariadb://inverse:inverse@mariadb:3306/inverse_blog
+          - database: mongodb
+            url: mongodb://mongodb:27017/inverse_blog
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose up -d --wait ${{ matrix.database }}
+      - name: Build and start the app
+        run: docker compose up -d --build --wait app
+        env:
+          DATABASE_URL: ${{ matrix.url }}
+      - run: scripts/smoke-test.sh
+      - name: App logs
+        if: failure()
+        run: docker compose logs app ${{ matrix.database }}

@@ -1,12 +1,11 @@
 import type { FieldType } from '../database-adapter.interface';
 import { createSqlAdapter } from '../sql/create-sql-adapter';
 
-const SYSTEM_SCHEMAS = [
-  'information_schema',
-  'mysql',
-  'performance_schema',
-  'sys',
-];
+// The database of the URL; MySQL has no schemas inside a database.
+const TABLES_QUERY = `
+  SELECT table_name AS name
+  FROM information_schema.tables
+  WHERE table_type = 'BASE TABLE' AND table_schema = DATABASE()`;
 
 const FIELD_TYPES: Record<string, FieldType> = {
   tinyint: 'Int',
@@ -31,7 +30,7 @@ export const mysqlAdapter = createSqlAdapter({
   name: 'mysql',
   protocols: ['mysql'],
   type: 'mysql',
-  systemSchemas: SYSTEM_SCHEMAS,
+  tablesQuery: TABLES_QUERY,
   fieldTypes: FIELD_TYPES,
 });
 
@@ -40,6 +39,6 @@ export const mariadbAdapter = createSqlAdapter({
   name: 'mariadb',
   protocols: ['mariadb'],
   type: 'mariadb',
-  systemSchemas: SYSTEM_SCHEMAS,
+  tablesQuery: TABLES_QUERY,
   fieldTypes: FIELD_TYPES,
 });

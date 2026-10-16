@@ -1,0 +1,88 @@
+# Databases with the blog sample loaded, and the sample app served over GraphQL.
+#
+#   docker compose up -d --wait postgres mysql mariadb mongodb
+#   DATABASE_URL=mongodb://mongodb:27017/inverse_blog docker compose up -d --build --wait app
+#
+# Data is not kept between runs: `docker compose down` starts them fresh.
+# Host ports can be moved with POSTGRES_PORT, MYSQL_PORT, MARIADB_PORT, MONGODB_PORT and APP_PORT.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: inverse
+      POSTGRES_PASSWORD: inverse
+      POSTGRES_DB: inverse_blog
+    ports: ['${POSTGRES_PORT:-5432}:5432']
+    volumes:
+      - ./samples/blog/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      # TCP: while the init scripts run the server only listens on its socket.
+      test: ['CMD', 'pg_isready', '-h', '127.0.0.1', '-U', 'inverse', '-d', 'inverse_blog']
+      interval: 2s
+      retries: 30
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: inverse
+      MYSQL_USER: inverse
+      MYSQL_PASSWORD: inverse
+      MYSQL_DATABASE: inverse_blog
+    ports: ['${MYSQL_PORT:-3306}:3306']
+    volumes:
+      - ./samples/blog/schema.mysql.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      # TCP so it only passes once the init scripts ran and the real server is up.
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uinverse', '-pinverse']
+      interval: 2s
+      retries: 60
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: inverse
+      MARIADB_USER: inverse
+      MARIADB_PASSWORD: inverse
+      MARIADB_DATABASE: inverse_blog
+    ports: ['${MARIADB_PORT:-3307}:3306']
+    volumes:
+      - ./samples/blog/schema.mysql.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 2s
+      retries: 60
+
+  mongodb:
+    image: mongo:8.0
+    ports: ['${MONGODB_PORT:-27017}:27017']
+    volumes:
+      - ./samples/blog/seed.mongodb.js:/docker-entrypoint-initdb.d/seed.js:ro
+    healthcheck:
+      # Waits for the seed, since the init scripts run on a server that already answers pings.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "quit(db.getSiblingDB('inverse_blog').blog_posts.countDocuments() > 0 ? 0 : 1)"
+      interval: 2s
+      retries: 30
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://inverse:inverse@postgres:5432/inverse_blog}
+      PORT: 3000
+    ports: ['${APP_PORT:-3000}:3000']
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://localhost:3000/graphql', { method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: '{ health }' }) })
+          .then((res) => process.exit(res.ok ? 0 : 1), () => process.exit(1))
+      interval: 2s
+      retries: 30

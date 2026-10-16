@@ -13,7 +13,8 @@
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
     "check": "biome check .",
-    "test": "jest"
+    "test": "jest",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js -c jest.integration.config.js"
   },
   "devDependencies": {
     "@apollo/server": "5.5.1",
