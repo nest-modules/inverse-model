@@ -6,4 +6,6 @@ module.exports = {
   testRegex: '/__integration__/.*\\.spec\\.ts$',
   transform: { '^.+\\.ts$': 'ts-jest' },
   testTimeout: 30000,
+  // The suites share the databases, and some count whole tables.
+  maxWorkers: 1,
 };

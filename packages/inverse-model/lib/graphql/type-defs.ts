@@ -196,6 +196,7 @@ function queryFields(model: ModelDefinition): string[] {
 }
 
 function mutationFields(model: ModelDefinition): string[] {
+  if (model.readOnly) return [];
   const names = operationNames(model);
   const fields = [
     `${names.create}(input: Create${model.name}Input!): ${model.name}!`,
@@ -214,13 +215,12 @@ function mutationFields(model: ModelDefinition): string[] {
 /** SDL of the whole API: per model, a type, its inputs, its queries and its mutations. */
 export function createTypeDefs(models: readonly ModelDefinition[]): string {
   const byName = new Map(models.map((model) => [model.name, model]));
+  const mutations = models.flatMap(mutationFields);
   return [
     SHARED_TYPE_DEFS,
     // GraphQL requires a Query root type even for a database with no tables.
     block('type', 'Query', ['health: String!', ...models.flatMap(queryFields)]),
-    ...(models.length > 0
-      ? [block('type', 'Mutation', models.flatMap(mutationFields))]
-      : []),
+    ...(mutations.length > 0 ? [block('type', 'Mutation', mutations)] : []),
     ...models.flatMap((model) => modelTypeDefs(model, byName)),
   ].join('\n\n');
 }

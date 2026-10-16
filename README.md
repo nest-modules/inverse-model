@@ -122,7 +122,38 @@ InverseModelModule.forRoot({
 | `pagination.maxLimit` | `1000` | Largest `limit` accepted; larger values are clamped. |
 | `graphql` | | Apollo options other than the schema. |
 
-The generated API reads and writes every table it finds. Put it behind your own authentication, for example a guard on the GraphQL route, and connect with a database user that only has the rights the API should have.
+#### Security
+
+By default the API reads and writes every table it finds. These options narrow it down:
+
+```ts
+InverseModelModule.forRoot({
+  url: process.env.DATABASE_URL!,
+  include: ['authors', 'blog_posts', 'audit_*'], // tables or `table.column`; everything when left out
+  exclude: ['*.password_hash', 'authors.email'], // wins over include
+  readOnly: ['audit_*'], // or `true` for the whole API
+  queryLimits: { maxDepth: 10, maxComplexity: 50000 },
+  authorize: ({ operation, context }) =>
+    operation === 'list' || context.req.user?.isAdmin === true,
+  scope: ({ type, context }) =>
+    type === 'BlogPosts' ? { tenantId: { eq: context.req.user.tenantId } } : null,
+});
+```
+
+| Option | Default | What it does |
+|---|---|---|
+| `include` / `exclude` | everything | Table or collection names (bare or schema-qualified, e.g. `public.users`) and `table.column` names; `*` matches any name. Hidden fields leave the types, inputs, filters and ordering, and hidden tables take their relations with them. |
+| `readOnly` | `false` | `true`, or the tables that get no create, update or delete. With nothing writable there is no `Mutation` type. |
+| `queryLimits.maxDepth` | `10` | Deepest nesting of fields a query may have. Introspection is not counted. |
+| `queryLimits.maxComplexity` | `50000` | Largest cost of a query: each field costs 1, times the rows of the lists it is in (their `limit`, or `pagination.defaultLimit`). |
+| `authorize` | allow all | `({ model, type, operation, context, args }) => boolean \| Promise<boolean>`, asked before every `list`, `count`, `byPk`, `create`, `update` and `delete`; relation fields ask for `list` of the model they point at. False answers a `FORBIDDEN` error. |
+| `scope` | none | `({ model, type, operation, context }) => Where \| null`, ANDed into every read, update and delete of the model, relations and their batches included, and part of the cache key. Properties are the API's (`tenantId`), not the columns'. It does not check what a create or update writes; use `authorize`, which sees `args`. |
+
+`model` is the table or collection name (schema-qualified on PostgreSQL and SQL Server, e.g. `public.blog_posts`) and `type` its GraphQL name. Nest guards do not run on these resolvers, so `authorize` and `scope` are where access control goes; `context` is Apollo's, `{ req }` by default.
+
+Errors from the database never reach the client: it gets `Internal server error` with an `errorId`, and the original is logged with Nest's `Logger` under that id. Validation errors, and errors thrown on purpose (a `GraphQLError` or a Nest `HttpException`), go through as they are. Passwords of the database and Redis URLs are hidden in errors and logs.
+
+Still connect with a database user that only has the rights the API should have.
 
 Or let the CLI write a starter project:
 

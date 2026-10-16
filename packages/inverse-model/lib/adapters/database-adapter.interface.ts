@@ -46,6 +46,8 @@ export interface ModelDefinition {
   /** Properties of the primary key; empty when the table has none. */
   primaryKey: string[];
   relations: RelationDefinition[];
+  /** Exposed without create, update or delete mutations. */
+  readOnly?: boolean;
 }
 
 /** Conditions on one field; every condition given must hold. */

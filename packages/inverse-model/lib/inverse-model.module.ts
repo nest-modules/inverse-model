@@ -1,11 +1,12 @@
 import { ApolloDriver, type ApolloDriverConfig } from '@nestjs/apollo';
-import { type DynamicModule, Module } from '@nestjs/common';
+import { type DynamicModule, Logger, Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import type { DatabaseConnection } from './adapters/database-adapter.interface';
 import { DatabaseModule } from './database/database.module';
 import { createSchema } from './graphql/create-schema';
 import { INVERSE_CONNECTION } from './inverse-model.constants';
 import type { InverseModelOptions } from './inverse-model.interfaces';
+import { secureGraphQL } from './security/secure-api';
 
 /**
  * Mounts a GraphQL API over an existing database: on start it reads the
@@ -29,10 +30,17 @@ export class InverseModelModule {
           driver: ApolloDriver,
           imports: [database],
           inject: [INVERSE_CONNECTION],
-          useFactory: (connection: DatabaseConnection) => ({
-            ...options.graphql,
-            ...createSchema(connection, pagination),
-          }),
+          useFactory: (connection: DatabaseConnection) =>
+            secureGraphQL(
+              connection,
+              options,
+              pagination,
+              new Logger('InverseModel'),
+              (scoped) => ({
+                ...options.graphql,
+                ...createSchema(scoped, pagination),
+              }),
+            ),
         }),
       ],
       exports: [database],

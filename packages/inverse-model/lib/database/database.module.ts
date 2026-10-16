@@ -11,13 +11,14 @@ import { withCache } from '../cache/cached-connection';
 import { createRedisStore } from '../cache/redis-store';
 import { INVERSE_CONNECTION } from '../inverse-model.constants';
 import type { InverseModelOptions } from '../inverse-model.interfaces';
+import { openRestricted, redactorFor } from '../security/secure-api';
 
 const logger = new Logger('InverseModel');
 
 async function connect(options: InverseModelOptions) {
-  const connection = await findAdapter(options.url).connect(options.url, {
-    ssl: options.ssl,
-  });
+  const connection = await openRestricted(options, () =>
+    findAdapter(options.url).connect(options.url, { ssl: options.ssl }),
+  );
   logger.log(`Read ${connection.models.length} tables or collections`);
   if (!options.cache) return connection;
 
@@ -26,7 +27,11 @@ async function connect(options: InverseModelOptions) {
     ttlByTable: options.cache.ttlByTable ?? {},
     keyPrefix: options.cache.keyPrefix ?? 'inverse:',
     onError: (error) =>
-      logger.warn(`Cache unavailable, reading the database: ${error}`),
+      logger.warn(
+        redactorFor(options)(
+          `Cache unavailable, reading the database: ${error}`,
+        ),
+      ),
   });
 }
 

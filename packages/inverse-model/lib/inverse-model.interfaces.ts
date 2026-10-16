@@ -1,6 +1,16 @@
 import type { ApolloDriverConfig } from '@nestjs/apollo';
 import type { SslOptions } from './adapters/database-adapter.interface';
+import type {
+  InverseAuthorize,
+  InverseQueryLimits,
+  InverseScope,
+} from './security/security.interfaces';
 
+export type {
+  FieldFilter,
+  Where,
+} from './adapters/database-adapter.interface';
+export type * from './security/security.interfaces';
 export type { SslOptions };
 
 export interface InverseCacheOptions {
@@ -34,4 +44,19 @@ export interface InverseModelOptions {
   pagination?: InversePaginationOptions;
   /** Overrides for the Apollo server; the schema itself always comes from the database. */
   graphql?: Omit<ApolloDriverConfig, 'driver' | 'typeDefs' | 'resolvers'>;
+  /**
+   * Tables or collections, and `table.column` fields, to expose; everything
+   * when not given. `*` matches any name, e.g. `audit_*` or `users.*`.
+   */
+  include?: string[];
+  /** Tables and `table.column` fields to hide, e.g. `*.password`; wins over `include`. */
+  exclude?: string[];
+  /** True, or the tables that get no create, update or delete mutations. */
+  readOnly?: boolean | string[];
+  /** Depth and cost limits checked before a query runs. */
+  queryLimits?: InverseQueryLimits;
+  /** Decides whether a request may run an operation; false answers FORBIDDEN. */
+  authorize?: InverseAuthorize;
+  /** Extra filter ANDed into every read, update and delete of a model, e.g. per tenant. */
+  scope?: InverseScope;
 }
