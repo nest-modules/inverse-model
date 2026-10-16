@@ -14,4 +14,23 @@ describe('generateProject', () => {
     );
     expect(content('.env')).toContain('DATABASE_URL=postgres://localhost/blog');
   });
+
+  it.each([
+    ['postgres://localhost/blog', 'pg'],
+    ['mysql://localhost/blog', 'mysql2'],
+    ['mongodb+srv://cluster.example.com/blog', 'mongodb'],
+  ])('adds the driver of %s', (databaseUrl, driver) => {
+    const pkg = generateProject({ name: 'blog-api', databaseUrl }).find(
+      (file) => file.path === 'package.json',
+    );
+    expect(
+      Object.keys(JSON.parse(pkg?.content ?? '{}').dependencies),
+    ).toContain(driver);
+  });
+
+  it('rejects a database no adapter handles', () => {
+    expect(() =>
+      generateProject({ name: 'x', databaseUrl: 'sqlserver://localhost/x' }),
+    ).toThrow('Unsupported database protocol: sqlserver');
+  });
 });

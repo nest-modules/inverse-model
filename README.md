@@ -16,13 +16,40 @@
 
 ### Usage
 
-Give the module a connection string. On start it reads the tables with TypeORM and serves a GraphQL API with one `create<Table>` mutation per table.
+Give the module a connection string. On start the adapter for its protocol reads the tables or collections, and the module serves a GraphQL API with one `create<Model>` mutation per table or collection.
 
 ```ts
 @Module({
   imports: [InverseModelModule.forRoot({ url: process.env.DATABASE_URL! })],
 })
 export class AppModule {}
+```
+
+### Adapters
+
+Each adapter handles one kind of database. Install the driver of the one you use:
+
+| Adapter | URL protocols | Driver | How the model is read |
+|---|---|---|---|
+| `postgresAdapter` | `postgres://`, `postgresql://` | `pg` | Tables, through TypeORM |
+| `mysqlAdapter` | `mysql://` | `mysql2` | Tables, through TypeORM |
+| `mariadbAdapter` | `mariadb://` | `mysql2` | Tables, through TypeORM |
+| `mongodbAdapter` | `mongodb://`, `mongodb+srv://` | `mongodb` | Collections, inferred from a sample of 100 documents each |
+
+A MongoDB collection has no schema, so `_id` is exposed as `id: ID!` and every other field is optional; a field whose values have different types is `JSON`.
+
+To support another database, or to replace a built-in adapter, implement `DatabaseAdapter` and pass it in `adapters`; those are tried before the built-in ones. A SQL database that TypeORM supports only needs `createSqlAdapter`:
+
+```ts
+const sqlServerAdapter = createSqlAdapter({
+  name: 'mssql',
+  protocols: ['mssql'],
+  type: 'mssql',
+  systemSchemas: ['sys', 'INFORMATION_SCHEMA'],
+  fieldTypes: { int: 'Int', bit: 'Boolean', datetime2: 'DateTime' },
+});
+
+InverseModelModule.forRoot({ url, adapters: [sqlServerAdapter] });
 ```
 
 Or let the CLI write that starter project:

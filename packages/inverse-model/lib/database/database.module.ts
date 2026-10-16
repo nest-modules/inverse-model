@@ -4,31 +4,37 @@ import {
   Module,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
-import { INVERSE_DATA_SOURCE } from '../inverse-model.constants';
-import { createDataSource } from './create-data-source';
+import type {
+  DatabaseAdapter,
+  DatabaseConnection,
+} from '../adapters/database-adapter.interface';
+import { findAdapter } from '../adapters/find-adapter';
+import { INVERSE_CONNECTION } from '../inverse-model.constants';
 
-/** Provides the TypeORM data source built from the database itself. */
+/** Provides the connection opened by the adapter for the protocol of the URL. */
 @Module({})
 export class DatabaseModule implements OnApplicationShutdown {
   constructor(
-    @Inject(INVERSE_DATA_SOURCE) private readonly dataSource: DataSource,
+    @Inject(INVERSE_CONNECTION) private readonly connection: DatabaseConnection,
   ) {}
 
-  static forRoot(url: string): DynamicModule {
+  static forRoot(
+    url: string,
+    adapters: readonly DatabaseAdapter[] = [],
+  ): DynamicModule {
     return {
       module: DatabaseModule,
       providers: [
         {
-          provide: INVERSE_DATA_SOURCE,
-          useFactory: () => createDataSource(url),
+          provide: INVERSE_CONNECTION,
+          useFactory: () => findAdapter(url, adapters).connect(url),
         },
       ],
-      exports: [INVERSE_DATA_SOURCE],
+      exports: [INVERSE_CONNECTION],
     };
   }
 
   onApplicationShutdown() {
-    return this.dataSource.destroy();
+    return this.connection.close();
   }
 }

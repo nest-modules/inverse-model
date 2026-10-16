@@ -2,10 +2,10 @@ import {
   type ColumnType,
   EntitySchema,
   type EntitySchemaColumnOptions,
+  type Table,
+  type TableColumn,
 } from 'typeorm';
-import type { Table } from 'typeorm/schema-builder/table/Table';
-import type { TableColumn } from 'typeorm/schema-builder/table/TableColumn';
-import { camelCase, pascalCase } from '../utils/naming';
+import { camelCase, pascalCase } from '../../utils/naming';
 
 // EntitySchema has no `identity` strategy; both are filled in by the database on insert.
 const generationOf = (column: TableColumn) =>

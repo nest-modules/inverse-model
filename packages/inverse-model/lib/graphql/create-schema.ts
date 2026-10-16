@@ -1,8 +1,10 @@
 import type { ApolloDriverConfig } from '@nestjs/apollo';
 import { GraphQLISODateTime } from '@nestjs/graphql';
-import type { DataSource, EntityMetadata } from 'typeorm';
-import type { ColumnMetadata } from 'typeorm/metadata/ColumnMetadata';
-import { graphqlType } from './graphql-type';
+import type {
+  DatabaseConnection,
+  FieldDefinition,
+  ModelDefinition,
+} from '../adapters/database-adapter.interface';
 import { GraphQLJSON } from './json.scalar';
 
 export interface GraphQLSchemaParts {
@@ -10,40 +12,40 @@ export interface GraphQLSchemaParts {
   resolvers: ApolloDriverConfig['resolvers'];
 }
 
-function fieldType(column: ColumnMetadata, required: boolean): string {
-  const type = graphqlType(String(column.type));
-  const list = column.isArray ? `[${type}]` : type;
+function fieldType(field: FieldDefinition, required: boolean): string {
+  const list = field.isArray ? `[${field.type}]` : field.type;
   return required ? `${list}!` : list;
 }
 
-// Generated columns and columns with a default may be left out on create.
-const isRequiredOnCreate = (column: ColumnMetadata) =>
-  !column.isNullable && !column.isGenerated && column.default === undefined;
+// Fields the database fills in may be left out on create.
+const isRequiredOnCreate = (field: FieldDefinition) =>
+  !field.isNullable && !field.hasDefault;
 
-function entityTypeDefs(entity: EntityMetadata): string {
-  const fields = entity.columns.map(
-    (column) =>
-      `  ${column.propertyName}: ${fieldType(column, !column.isNullable)}`,
+function modelTypeDefs(model: ModelDefinition): string {
+  const fields = model.fields.map(
+    (field) => `  ${field.property}: ${fieldType(field, !field.isNullable)}`,
   );
-  const inputs = entity.columns.map(
-    (column) =>
-      `  ${column.propertyName}: ${fieldType(column, isRequiredOnCreate(column))}`,
+  const inputs = model.fields.map(
+    (field) =>
+      `  ${field.property}: ${fieldType(field, isRequiredOnCreate(field))}`,
   );
-  return `type ${entity.name} {
+  return `type ${model.name} {
 ${fields.join('\n')}
 }
 
-input Create${entity.name}Input {
+input Create${model.name}Input {
 ${inputs.join('\n')}
 }`;
 }
 
-/** Builds the GraphQL schema of the data source: one `create<Entity>` mutation per table. */
-export function createSchema(dataSource: DataSource): GraphQLSchemaParts {
-  const entities = dataSource.entityMetadatas;
-  const mutations = entities.map(
-    (entity) =>
-      `  create${entity.name}(input: Create${entity.name}Input!): ${entity.name}!`,
+/** Builds the GraphQL schema of the connection: one `create<Model>` mutation per table or collection. */
+export function createSchema(
+  connection: DatabaseConnection,
+): GraphQLSchemaParts {
+  const { models } = connection;
+  const mutations = models.map(
+    (model) =>
+      `  create${model.name}(input: Create${model.name}Input!): ${model.name}!`,
   );
 
   const typeDefs = [
@@ -51,20 +53,16 @@ export function createSchema(dataSource: DataSource): GraphQLSchemaParts {
     'scalar JSON',
     // GraphQL requires a Query root type; the entry points of the API are the create mutations.
     'type Query {\n  health: String!\n}',
-    ...(entities.length > 0
+    ...(models.length > 0
       ? [`type Mutation {\n${mutations.join('\n')}\n}`]
       : []),
-    ...entities.map(entityTypeDefs),
+    ...models.map(modelTypeDefs),
   ].join('\n\n');
 
-  const createResolvers = entities.map((entity) => [
-    `create${entity.name}`,
-    async (_parent: unknown, { input }: { input: Record<string, unknown> }) => {
-      const result = await dataSource
-        .getRepository(entity.target)
-        .insert(input);
-      return { ...input, ...result.generatedMaps[0] };
-    },
+  const createResolvers = models.map((model) => [
+    `create${model.name}`,
+    (_parent: unknown, { input }: { input: Record<string, unknown> }) =>
+      connection.insert(model, input),
   ]);
 
   return {
@@ -73,7 +71,7 @@ export function createSchema(dataSource: DataSource): GraphQLSchemaParts {
       DateTime: GraphQLISODateTime,
       JSON: GraphQLJSON,
       Query: { health: () => 'ok' },
-      ...(entities.length > 0
+      ...(models.length > 0
         ? { Mutation: Object.fromEntries(createResolvers) }
         : {}),
     },

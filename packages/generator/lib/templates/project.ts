@@ -10,11 +10,33 @@ const DEPENDENCIES = {
   '@nestjs/graphql': '14.0.3',
   '@nestjs/platform-express': '12.1.3',
   graphql: '17.0.2',
-  pg: '8.23.1',
   'reflect-metadata': '0.2.2',
   rxjs: '7.8.2',
   typeorm: '1.1.2',
 };
+
+const POSTGRES_DRIVER = { pg: '8.23.1' };
+const MYSQL_DRIVER = { mysql2: '3.24.6' };
+const MONGODB_DRIVER = { mongodb: '7.7.0' };
+
+// The driver package each adapter of the library loads.
+const DRIVERS: Record<string, Record<string, string>> = {
+  postgres: POSTGRES_DRIVER,
+  postgresql: POSTGRES_DRIVER,
+  mysql: MYSQL_DRIVER,
+  mariadb: MYSQL_DRIVER,
+  mongodb: MONGODB_DRIVER,
+  'mongodb+srv': MONGODB_DRIVER,
+};
+
+function driverOf(databaseUrl: string) {
+  const protocol = new URL(databaseUrl).protocol.replace(/:$/, '');
+  const driver = DRIVERS[protocol];
+  if (!driver) {
+    throw new Error(`Unsupported database protocol: ${protocol}`);
+  }
+  return driver;
+}
 
 const DEV_DEPENDENCIES = {
   '@types/node': '24.19.2',
@@ -39,7 +61,11 @@ export function projectFiles(
           build: 'tsc -p tsconfig.json',
           start: 'node --env-file=.env dist/main.js',
         },
-        dependencies: DEPENDENCIES,
+        dependencies: Object.fromEntries(
+          Object.entries({ ...DEPENDENCIES, ...driverOf(databaseUrl) }).sort(
+            ([a], [b]) => a.localeCompare(b),
+          ),
+        ),
         devDependencies: DEV_DEPENDENCIES,
       }),
     },

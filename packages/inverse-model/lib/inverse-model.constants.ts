@@ -1,1 +1,1 @@
-export const INVERSE_DATA_SOURCE = Symbol('INVERSE_DATA_SOURCE');
+export const INVERSE_CONNECTION = Symbol('INVERSE_CONNECTION');
