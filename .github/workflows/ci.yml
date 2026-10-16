@@ -85,6 +85,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          # Only node runs here; without this, setup-node reads packageManager and looks for pnpm.
+          package-manager-cache: false
       - run: docker compose up -d --wait ${{ matrix.services }}
       - name: Build and start the app
         run: docker compose up -d --build --wait app
