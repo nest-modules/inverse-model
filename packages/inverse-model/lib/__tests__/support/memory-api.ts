@@ -62,7 +62,12 @@ export function tenantModels(): ModelDefinition[] {
     relations: [],
   };
   addRelations([
-    { source: posts, field: 'authorId', target: authors, reference: 'id' },
+    {
+      source: posts,
+      fields: ['authorId'],
+      target: authors,
+      references: ['id'],
+    },
   ]);
   return [authors, posts, logs];
 }
@@ -134,6 +139,21 @@ export function memoryConnection(models: ModelDefinition[]) {
       if (record) rows(model).splice(rows(model).indexOf(record), 1);
       return record;
     }),
+    upsert: jest.fn(async (model, input) => {
+      const record = byKey(model, input);
+      if (record) return Object.assign(record, input);
+      return connection.insert(model, input);
+    }),
+    insertMany: jest.fn(async (model, inputs) => {
+      for (const input of inputs) await connection.insert(model, input);
+      return inputs.length;
+    }),
+    deleteMany: jest.fn(async (model, where) => {
+      const doomed = rows(model).filter((row) => matches(row, where));
+      for (const row of doomed) rows(model).splice(rows(model).indexOf(row), 1);
+      return doomed.length;
+    }),
+    nullsFirst: true,
     close: async () => {},
   };
   return connection;

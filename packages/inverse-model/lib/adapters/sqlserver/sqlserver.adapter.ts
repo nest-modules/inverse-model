@@ -18,6 +18,18 @@ export const sqlServerAdapter = createSqlAdapter({
     SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS name
     FROM INFORMATION_SCHEMA.TABLES
     WHERE TABLE_TYPE = 'BASE TABLE'`,
+  viewsQuery: `
+    SELECT TABLE_SCHEMA + '.' + TABLE_NAME AS name
+    FROM INFORMATION_SCHEMA.VIEWS`,
+  // TypeORM's getTables() only reads base tables here.
+  viewColumnsQuery: `
+    SELECT c.TABLE_SCHEMA + '.' + c.TABLE_NAME AS table_name,
+      c.COLUMN_NAME AS column_name, c.DATA_TYPE AS data_type,
+      c.IS_NULLABLE AS is_nullable
+    FROM INFORMATION_SCHEMA.COLUMNS c
+    JOIN INFORMATION_SCHEMA.VIEWS v
+      ON v.TABLE_SCHEMA = c.TABLE_SCHEMA AND v.TABLE_NAME = c.TABLE_NAME
+    ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`,
   fieldTypes: {
     tinyint: 'Int',
     smallint: 'Int',

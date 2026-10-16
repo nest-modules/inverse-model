@@ -51,6 +51,13 @@ describe('withCache', () => {
       }),
       update: jest.fn(async () => null),
       delete: jest.fn(async () => null),
+      upsert: jest.fn(async (_model, input) => input),
+      insertMany: jest.fn(async (_model, inputs) => {
+        rows.push(...inputs);
+        return inputs.length;
+      }),
+      deleteMany: jest.fn(async () => 0),
+      nullsFirst: true,
       close: jest.fn(async () => {}),
     };
     store = memoryStore();
@@ -88,6 +95,40 @@ describe('withCache', () => {
     await cached.insert(posts, { id: 9 });
     await cached.findOne(authors, { id: 1 });
     expect(connection.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the database again after a batch write or an upsert', async () => {
+    await cached.count(authors);
+    await cached.insertMany(authors, [{ id: 2 }, { id: 3 }]);
+    await expect(cached.count(authors)).resolves.toBe(3);
+    await cached.upsert(authors, { id: 3 });
+    await cached.count(authors);
+    await cached.deleteMany(authors, { id: { eq: 3 } });
+    await cached.count(authors);
+    expect(connection.count).toHaveBeenCalledTimes(4);
+  });
+
+  it('keys a relation filter on the related table too', async () => {
+    const withPosts: ModelDefinition = {
+      ...model('writers'),
+      relations: [
+        {
+          property: 'posts',
+          kind: 'many',
+          target: 'authors',
+          fields: ['id'],
+          references: ['writerId'],
+        },
+      ],
+    };
+    connection.models.push(withPosts);
+    const where = { posts: { some: { id: { eq: 1 } } } };
+    await cached.count(withPosts, where);
+    await cached.count(withPosts, where);
+    expect(connection.count).toHaveBeenCalledTimes(1);
+    await cached.insert(authors, { id: 2 });
+    await cached.count(withPosts, where);
+    expect(connection.count).toHaveBeenCalledTimes(2);
   });
 
   it('skips tables with a TTL of 0', async () => {

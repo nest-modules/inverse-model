@@ -1,5 +1,9 @@
-import { Decimal128, ObjectId } from 'mongodb';
-import { inferForeignKeys, inferModel } from '../adapters/mongodb/infer-model';
+import { DBRef, Decimal128, ObjectId } from 'mongodb';
+import {
+  inferDbRefs,
+  inferForeignKeys,
+  inferModel,
+} from '../adapters/mongodb/infer-model';
 
 describe('inferModel', () => {
   const model = inferModel('blog_posts', [
@@ -78,7 +82,12 @@ describe('inferModel', () => {
     const tags = inferModel('tags', [{ _id: new ObjectId(), label: 'x' }]);
     const keys = inferForeignKeys([authors, model, tags]);
     expect(keys).toEqual([
-      { source: model, field: 'authorId', target: authors, reference: 'id' },
+      {
+        source: model,
+        fields: ['authorId'],
+        target: authors,
+        references: ['id'],
+      },
     ]);
   });
 
@@ -90,10 +99,52 @@ describe('inferModel', () => {
     expect(inferForeignKeys([categories, posts])).toEqual([
       {
         source: posts,
-        field: 'categoryId',
+        fields: ['categoryId'],
         target: categories,
-        reference: 'id',
+        references: ['id'],
       },
     ]);
+  });
+
+  describe('references beyond names', () => {
+    const authors = inferModel('authors', [{ _id: new ObjectId() }]);
+    const tags = inferModel('tags', [{ _id: new ObjectId() }]);
+    const documents = [
+      {
+        _id: new ObjectId(),
+        writer: new DBRef('authors', new ObjectId()),
+        tag_ids: [new ObjectId(), new ObjectId()],
+        labels: [],
+      },
+    ];
+    const notes = inferModel('notes', documents);
+    const fieldNamed = (property: string) =>
+      notes.fields.find((field) => field.property === property);
+
+    it('types DBRefs as ids and arrays of ids as ID lists', () => {
+      expect(fieldNamed('writer')).toMatchObject({
+        type: 'ID',
+        isArray: false,
+      });
+      expect(fieldNamed('tagIds')).toMatchObject({ type: 'ID', isArray: true });
+      expect(fieldNamed('labels')).toMatchObject({
+        type: 'JSON',
+        isArray: false,
+      });
+    });
+
+    it('reads the collection of a DBRef and the target of an id list', () => {
+      const dbRefs = new Map([['notes', inferDbRefs(documents)]]);
+      expect(dbRefs.get('notes')).toEqual(new Map([['writer', 'authors']]));
+      expect(inferForeignKeys([authors, tags, notes], dbRefs)).toEqual([
+        {
+          source: notes,
+          fields: ['writer'],
+          target: authors,
+          references: ['id'],
+        },
+        { source: notes, fields: ['tagIds'], target: tags, references: ['id'] },
+      ]);
+    });
   });
 });

@@ -6,6 +6,7 @@ import type {
   ModelDefinition,
   Where,
 } from '../adapters/database-adapter.interface';
+import { mapWhere, modelsReadBy } from '../adapters/relation-where';
 import { operationNames } from '../graphql/operation-names';
 import type {
   InverseAuthorize,
@@ -52,6 +53,31 @@ export function withScope(
     });
     return where && Object.keys(where).length > 0 ? where : null;
   };
+  /**
+   * The filter with the scope of each related model ANDed into its relation
+   * filters, so they never match rows the scope hides. `every` checks only
+   * the related rows in scope.
+   */
+  const scopedRelations = (
+    model: ModelDefinition,
+    where: Where | null | undefined,
+  ) =>
+    mapWhere(where, model, connection.models, {
+      async nested(target, inner, part) {
+        const where = await scopeOf(target, 'list');
+        if (!where) return inner;
+        return part === 'every'
+          ? { OR: [inner, { NOT: where }] }
+          : { AND: [inner, where] };
+      },
+    });
+  /** The filter of a read or delete: the scope ANDed in, relation filters included. */
+  const scoped = async (
+    model: ModelDefinition,
+    where: Where | null | undefined,
+    operation: InverseOperation,
+  ) =>
+    both(await scopedRelations(model, where), await scopeOf(model, operation));
   /** Whether the row with `key` is within `where`. */
   const visible = async (
     model: ModelDefinition,
@@ -67,13 +93,14 @@ export function withScope(
 
   return {
     models: connection.models,
+    nullsFirst: connection.nullsFirst,
     find: async (model, args) =>
       connection.find(model, {
         ...args,
-        where: both(args.where, await scopeOf(model, 'list')),
+        where: await scoped(model, args.where, 'list'),
       }),
     count: async (model, where) =>
-      connection.count(model, both(where, await scopeOf(model, 'count'))),
+      connection.count(model, await scoped(model, where, 'count')),
     async findOne(model, key) {
       const where = await scopeOf(model, 'byPk');
       return where
@@ -91,6 +118,28 @@ export function withScope(
       if (where && !(await visible(model, key, where))) return null;
       return connection.delete(model, key);
     },
+    async upsert(model, input) {
+      const where = await scopeOf(model, 'update');
+      const key = Object.fromEntries(
+        model.primaryKey.map((property) => [property, input[property]]),
+      );
+      const complete = Object.values(key).every((value) => value != null);
+      // A row outside the scope is neither updated nor, as its key is taken, created.
+      if (
+        where &&
+        complete &&
+        (await connection.findOne(model, key)) &&
+        !(await visible(model, key, where))
+      ) {
+        throw new GraphQLError(`Not allowed to update ${model.name}`, {
+          extensions: { code: 'FORBIDDEN' },
+        });
+      }
+      return connection.upsert(model, input);
+    },
+    insertMany: (model, inputs) => connection.insertMany(model, inputs),
+    deleteMany: async (model, where) =>
+      connection.deleteMany(model, await scoped(model, where, 'delete')),
     ...(connection.transaction && {
       // Writes run with hooks go through the transaction's connection, so it is scoped too.
       transaction: (work) =>
@@ -143,26 +192,46 @@ export function secureResolvers(
   models: readonly ModelDefinition[],
   authorize: InverseAuthorize | undefined,
 ): ResolverMap {
+  const check = async (
+    model: ModelDefinition,
+    operation: InverseOperation,
+    context: unknown,
+    args: Record<string, unknown>,
+  ) => {
+    const allowed =
+      !authorize ||
+      (await authorize({
+        model: model.source,
+        type: model.name,
+        operation,
+        context,
+        args,
+      }));
+    if (!allowed) {
+      throw new GraphQLError(`Not allowed to ${operation} ${model.name}`, {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+  };
+  /**
+   * Runs `authorize` for each operation of the field, and a `list` of every
+   * model its relation filters read, before the resolver.
+   */
   const guard =
     (
       resolve: Resolver,
       model: ModelDefinition,
-      operation: InverseOperation,
+      operations: InverseOperation[],
     ): Resolver =>
     async (parent, args, context, info) => {
-      const allowed =
-        !authorize ||
-        (await authorize({
-          model: model.source,
-          type: model.name,
-          operation,
-          context,
-          args: args ?? {},
-        }));
-      if (!allowed) {
-        throw new GraphQLError(`Not allowed to ${operation} ${model.name}`, {
-          extensions: { code: 'FORBIDDEN' },
-        });
+      for (const operation of operations) {
+        await check(model, operation, context, args ?? {});
+      }
+      if (authorize) {
+        const where = (args?.where ?? null) as Where | null;
+        for (const read of modelsReadBy(model, where, models)) {
+          await check(read, 'list', context, args ?? {});
+        }
       }
       return resolve(parent, args, context, info);
     };
@@ -174,15 +243,31 @@ export function secureResolvers(
 
   for (const model of models) {
     const names = operationNames(model);
-    for (const operation of ['list', 'count', 'byPk'] as const) {
-      const resolve = query[names[operation]];
-      if (resolve) query[names[operation]] = guard(resolve, model, operation);
+    // Each field asks for the operations it runs: a connection is a list, an
+    // upsert may create or update, and batches create or delete.
+    const queries: [string, InverseOperation[]][] = [
+      [names.list, ['list']],
+      [names.count, ['count']],
+      [names.byPk, ['byPk']],
+      [names.connection, ['list']],
+    ];
+    const mutations: [string, InverseOperation[]][] = [
+      [names.create, ['create']],
+      [names.update, ['update']],
+      [names.delete, ['delete']],
+      [names.upsert, ['create', 'update']],
+      [names.createMany, ['create']],
+      [names.deleteMany, ['delete']],
+    ];
+    for (const [field, operations] of queries) {
+      const resolve = query[field];
+      if (resolve) query[field] = guard(resolve, model, operations);
     }
-    for (const operation of ['create', 'update', 'delete'] as const) {
-      const resolve = mutation[names[operation]];
+    for (const [field, operations] of mutations) {
+      const resolve = mutation[field];
       if (!resolve) continue;
-      if (model.readOnly) delete mutation[names[operation]];
-      else mutation[names[operation]] = guard(resolve, model, operation);
+      if (model.readOnly) delete mutation[field];
+      else mutation[field] = guard(resolve, model, operations);
     }
 
     if (!resolvers[model.name]) continue;
@@ -191,7 +276,7 @@ export function secureResolvers(
       const target = byName.get(relation.target);
       const resolve = fields[relation.property];
       if (target && resolve) {
-        fields[relation.property] = guard(resolve, target, 'list');
+        fields[relation.property] = guard(resolve, target, ['list']);
       }
     }
     secured[model.name] = fields;

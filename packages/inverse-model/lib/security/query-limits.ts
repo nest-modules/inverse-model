@@ -64,6 +64,17 @@ function fieldType(
     : undefined;
 }
 
+/** A Relay connection of the generated API: an object type with `edges` and `pageInfo`. */
+const isConnection = (type: GraphQLOutputType) => {
+  const named = getNamedType(type);
+  return (
+    isObjectType(named) &&
+    named.name.endsWith('Connection') &&
+    'edges' in named.getFields() &&
+    'pageInfo' in named.getFields()
+  );
+};
+
 const getNamedTypeOf = (
   parent: GraphQLNamedType | undefined,
   node: FieldNode,
@@ -116,10 +127,10 @@ export function queryLimitRules(
     },
   });
 
-  /** Rows a list field may return, from its `limit` argument. */
+  /** Rows a list field may return, from its `limit` argument, or `first` or `last` for a connection. */
   const rowsOf = (node: FieldNode) => {
-    const limit = node.arguments?.find(
-      (argument) => argument.name.value === 'limit',
+    const limit = node.arguments?.find((argument) =>
+      ['limit', 'first', 'last'].includes(argument.name.value),
     );
     if (!limit) return settings.defaultLimit;
     if (limit.value.kind === Kind.INT) {
@@ -148,10 +159,14 @@ export function queryLimitRules(
         )) {
           if (isIntrospection(node)) continue;
           const returned = fieldType(parent, node);
+          // A connection pages its edges, so its page size counts there and not again on them.
+          const inConnection = isObjectType(parent) && isConnection(parent);
           const paged =
             returned !== undefined &&
-            isListType(getNullableType(returned)) &&
-            isObjectType(getNamedType(returned));
+            !inConnection &&
+            (isConnection(returned) ||
+              (isListType(getNullableType(returned)) &&
+                isObjectType(getNamedType(returned))));
           const rows = paged ? rowsOf(node) : 1;
           const below = node.selectionSet
             ? cost(node.selectionSet, getNamedTypeOf(parent, node))

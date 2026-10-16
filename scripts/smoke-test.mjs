@@ -1,5 +1,6 @@
 // Exercises the generated GraphQL API of the running app end to end and fails on the first error:
-// create, read by key, filter, count, follow relations both ways, update and delete.
+// create, read by key, filter, count, follow relations both ways, filter by relation, page by
+// cursor, upsert, write in batches, update and delete.
 //   node scripts/smoke-test.mjs [http://localhost:3000/graphql]
 const url = process.argv[2] ?? 'http://localhost:3000/graphql';
 
@@ -79,6 +80,49 @@ check(
   read.blogPosts.some((found) => found.author.email === email),
   'filters posts case-insensitively, with their author',
   read.blogPosts,
+);
+
+const related = await call(
+  `query ($email: String!) {
+    blogPosts(where: { author: { email: { eq: $email } } }) { title }
+    authors(where: { email: { eq: $email }, blogPosts: { some: { published: { eq: true } } } }) { email }
+    blogPostsConnection(where: { authorId: { eq: ${literal(author.id)} } }, first: 1) {
+      edges { cursor node { title } } pageInfo { hasNextPage endCursor } totalCount
+    }
+  }`,
+  { email },
+);
+check(
+  related.blogPosts.length === 1 && related.authors.length === 1,
+  'filters by relation both ways',
+  related,
+);
+check(
+  related.blogPostsConnection.totalCount === 1 &&
+    related.blogPostsConnection.edges[0].node.title === 'Smoke post' &&
+    related.blogPostsConnection.pageInfo.hasNextPage === false,
+  'pages by cursor',
+  related.blogPostsConnection,
+);
+
+const batch = await call(
+  `mutation {
+    upsertAuthor(input: { id: ${literal(author.id)}, fullName: "Smoke", email: "${email}" }) { fullName }
+    createManyBlogPosts(inputs: [
+      { authorId: ${literal(author.id)}, title: "Smoke batch 1" },
+      { authorId: ${literal(author.id)}, title: "Smoke batch 2" }
+    ])
+  }`,
+);
+const { deleteManyBlogPosts } = await call(
+  `mutation { deleteManyBlogPosts(where: { authorId: { eq: ${literal(author.id)} }, title: { contains: "batch" } }) }`,
+);
+check(
+  batch.upsertAuthor.fullName === 'Smoke' &&
+    batch.createManyBlogPosts === 2 &&
+    deleteManyBlogPosts === 2,
+  'upserts and writes in batches',
+  { ...batch, deleteManyBlogPosts },
 );
 
 const { updateAuthor } = await call(

@@ -51,6 +51,10 @@ function fakeDatabase(tables: string[]) {
       insert: async (_model, input) => input,
       update: async () => null,
       delete: async () => null,
+      upsert: async (_model, input) => input,
+      insertMany: async (_model, inputs) => inputs.length,
+      deleteMany: async () => 0,
+      nullsFirst: true,
       close,
     }),
   );

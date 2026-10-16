@@ -92,8 +92,8 @@ export function restrictModels(
       const target = byName.get(relation.target);
       return (
         target !== undefined &&
-        hasProperty(model, relation.field) &&
-        hasProperty(target, relation.reference)
+        relation.fields.every((field) => hasProperty(model, field)) &&
+        relation.references.every((reference) => hasProperty(target, reference))
       );
     });
   }
@@ -119,6 +119,12 @@ export function restrictConnection(
     update: async (model, key, input) =>
       connection.update(writable(model), key, input),
     delete: async (model, key) => connection.delete(writable(model), key),
+    upsert: async (model, input) => connection.upsert(writable(model), input),
+    insertMany: async (model, inputs) =>
+      connection.insertMany(writable(model), inputs),
+    deleteMany: async (model, where) =>
+      connection.deleteMany(writable(model), where),
+    nullsFirst: connection.nullsFirst,
     ...(connection.transaction && {
       transaction: (work) =>
         (connection.transaction as NonNullable<typeof connection.transaction>)(

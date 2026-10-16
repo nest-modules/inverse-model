@@ -12,17 +12,19 @@ import type {
   DatabaseAdapter,
   DatabaseConnection,
   DatabaseRecord,
+  DatabaseTransaction,
   FieldDefinition,
   FieldType,
   ModelDefinition,
 } from '../database-adapter.interface';
 import { addRelations, type ForeignKey } from '../relations';
 import { createEntitySchema } from './create-entity-schema';
-import { whereSql } from './where-sql';
+import { readViews, type ViewQueries } from './read-views';
+import { type RelationScope, whereSql } from './where-sql';
 
 type ColumnMetadata = EntityMetadata['columns'][number];
 
-export interface SqlAdapterOptions {
+export interface SqlAdapterOptions extends ViewQueries {
   name: string;
   protocols: readonly string[];
   type: DataSourceOptions['type'];
@@ -45,6 +47,8 @@ export interface SqlAdapterOptions {
   fieldTypeOverridesQuery?: string;
   /** Data source options for the URL and connect options; by default `ssl` goes through as is. */
   connectionOptions?: (url: URL, options: ConnectOptions) => object;
+  /** Whether nulls sort first in ascending order; true unless given. */
+  nullsFirst?: boolean;
 }
 
 const defaultConnectionOptions = (_url: URL, { ssl }: ConnectOptions) =>
@@ -78,6 +82,7 @@ function modelOf(
   fieldTypes: SqlAdapterOptions['fieldTypes'],
   overrides: FieldTypeOverrides,
   naming: Naming,
+  readOnly: boolean,
 ): ModelDefinition {
   // A table without a key had every column made primary for TypeORM's sake.
   const hasPrimaryKey = table.columns.some((column) => column.isPrimary);
@@ -93,10 +98,11 @@ function modelOf(
       ? entity.primaryColumns.map((column) => column.propertyName)
       : [],
     relations: [],
+    ...(readOnly ? { readOnly } : {}),
   };
 }
 
-/** Single-column foreign keys between the exposed tables; composite ones are left out. */
+/** Foreign keys between the exposed tables and views, single-column and composite. */
 function foreignKeysOf(
   tables: Table[],
   models: Map<Table, ModelDefinition>,
@@ -111,13 +117,17 @@ function foreignKeysOf(
   return tables.flatMap((table) =>
     table.foreignKeys.flatMap((key) => {
       const target = tableNamed(key.referencedTableName);
-      if (!target || key.columnNames.length !== 1) return [];
+      if (!target) return [];
       return [
         {
           source: models.get(table) as ModelDefinition,
-          field: naming.field(key.columnNames[0], table.name),
+          fields: key.columnNames.map((column) =>
+            naming.field(column, table.name),
+          ),
           target: models.get(target) as ModelDefinition,
-          reference: naming.field(key.referencedColumnNames[0], target.name),
+          references: key.referencedColumnNames.map((column) =>
+            naming.field(column, target.name),
+          ),
         },
       ];
     }),
@@ -133,6 +143,7 @@ interface OverrideRow {
 async function readTables(
   options: DataSourceOptions,
   adapter: SqlAdapterOptions,
+  connectOptions: ConnectOptions,
 ) {
   const inspector = await new DataSource(options).initialize();
   const queryRunner = inspector.createQueryRunner();
@@ -142,6 +153,7 @@ async function readTables(
     );
     const names = rows.map((row) => row.name);
     const tables = names.length > 0 ? await queryRunner.getTables(names) : [];
+    const views = await readViews(queryRunner, adapter, connectOptions.views);
     const overrideRows: OverrideRow[] = adapter.fieldTypeOverridesQuery
       ? await queryRunner.query(adapter.fieldTypeOverridesQuery)
       : [];
@@ -151,7 +163,7 @@ async function readTables(
         row.field_type,
       ]),
     );
-    return { tables, overrides };
+    return { tables, views, overrides };
   } finally {
     await queryRunner.release();
     await inspector.destroy();
@@ -172,17 +184,45 @@ function entityNamesOf(tables: Table[]): Map<string, string> {
   return names;
 }
 
+/** Rows deleted per statement, well under SQL Server's 2100 parameters. */
+const DELETE_CHUNK = 500;
+
 /** Operations through `manager`: the data source's own, or one bound to a transaction. */
 function connectionOver(
   dataSource: DataSource,
   models: ModelDefinition[],
   entityNames: Map<string, string>,
+  nullsFirst: boolean,
   manager: EntityManager = dataSource.manager,
 ): DatabaseConnection {
+  const entityOf = (model: ModelDefinition) =>
+    entityNames.get(model.source) as string;
   const repository = (model: ModelDefinition) =>
-    manager.getRepository<DatabaseRecord>(
-      entityNames.get(model.source) as string,
+    manager.getRepository<DatabaseRecord>(entityOf(model));
+  const { driver } = dataSource;
+  const scope = (model: ModelDefinition): RelationScope => ({
+    model,
+    models,
+    table: (other) =>
+      dataSource
+        .getMetadata(entityOf(other))
+        .tablePath.split('.')
+        .map((part) => driver.escape(part))
+        .join('.'),
+    escape: (name) => driver.escape(name),
+  });
+  /** The primary key in `input`, or null when part of it is missing. */
+  const keyIn = (model: ModelDefinition, input: DatabaseRecord) => {
+    const key = Object.fromEntries(
+      model.primaryKey.map((property) => [property, input[property]]),
     );
+    const complete =
+      model.primaryKey.length > 0 &&
+      Object.values(key).every(
+        (value) => value !== undefined && value !== null,
+      );
+    return complete ? key : null;
+  };
   // Keys come from the API already matched against the primary key columns.
   const byKey = (key: DatabaseRecord) =>
     key as FindOptionsWhere<DatabaseRecord>;
@@ -200,11 +240,40 @@ function connectionOver(
     const record = await repository(model).findOneBy(byKey(key));
     return record && normalize(model, record);
   };
+  const insert = async (model: ModelDefinition, input: DatabaseRecord) => {
+    const result = await repository(model).insert(input);
+    const created = { ...input, ...result.generatedMaps[0] };
+    // Re-read so defaults the driver does not return (MySQL has no RETURNING) show up.
+    const key = keyIn(model, created);
+    return (key && (await findOne(model, key))) || normalize(model, created);
+  };
+
+  function transaction<T>(
+    work: (transaction: DatabaseTransaction) => Promise<T>,
+  ): Promise<T> {
+    if (manager.queryRunner?.isTransactionActive) {
+      return work({ connection, active: true, manager });
+    }
+    return dataSource.transaction((transactional) =>
+      work({
+        connection: connectionOver(
+          dataSource,
+          models,
+          entityNames,
+          nullsFirst,
+          transactional,
+        ),
+        active: true,
+        manager: transactional,
+      }),
+    );
+  }
 
   const connection: DatabaseConnection = {
     models,
+    nullsFirst,
     async find(model, { where, orderBy, limit, offset }) {
-      const { sql, parameters } = whereSql(where, 't');
+      const { sql, parameters } = whereSql(where, 't', scope(model));
       const query = repository(model)
         .createQueryBuilder('t')
         .where(sql, parameters);
@@ -219,7 +288,7 @@ function connectionOver(
       return records.map((record) => normalize(model, record));
     },
     async count(model, where) {
-      const { sql, parameters } = whereSql(where, 't');
+      const { sql, parameters } = whereSql(where, 't', scope(model));
       const row = await repository(model)
         .createQueryBuilder('t')
         .select('COUNT(*)', 'count')
@@ -228,20 +297,7 @@ function connectionOver(
       return Number(row?.count ?? 0);
     },
     findOne,
-    async insert(model, input) {
-      const result = await repository(model).insert(input);
-      const created = { ...input, ...result.generatedMaps[0] };
-      // Re-read so defaults the driver does not return (MySQL has no RETURNING) show up.
-      const key = Object.fromEntries(
-        model.primaryKey.map((property) => [property, created[property]]),
-      );
-      const complete =
-        model.primaryKey.length > 0 &&
-        Object.values(key).every((value) => value !== undefined);
-      return (
-        (complete && (await findOne(model, key))) || normalize(model, created)
-      );
-    },
+    insert,
     async update(model, key, input) {
       if (Object.keys(input).length > 0) {
         await repository(model).update(byKey(key), input);
@@ -253,23 +309,51 @@ function connectionOver(
       if (record) await repository(model).delete(byKey(key));
       return record;
     },
-    transaction(work) {
-      if (manager.queryRunner?.isTransactionActive) {
-        return work({ connection, active: true, manager });
-      }
-      return dataSource.transaction((transactional) =>
-        work({
-          connection: connectionOver(
-            dataSource,
-            models,
-            entityNames,
-            transactional,
+    async upsert(model, input) {
+      const key = keyIn(model, input);
+      if (!key) return insert(model, input);
+      return transaction(async ({ connection: inner }) => {
+        if (!(await inner.findOne(model, key))) {
+          return inner.insert(model, input);
+        }
+        const changes = Object.fromEntries(
+          Object.entries(input).filter(
+            ([property]) => !model.primaryKey.includes(property),
           ),
-          active: true,
-          manager: transactional,
-        }),
-      );
+        );
+        return (await inner.update(model, key, changes)) as DatabaseRecord;
+      });
     },
+    async insertMany(model, inputs) {
+      if (inputs.length > 0) await repository(model).insert(inputs);
+      return inputs.length;
+    },
+    async deleteMany(model, where) {
+      if (model.primaryKey.length === 0) {
+        throw new Error(`${model.name} has no primary key to delete by`);
+      }
+      const { sql, parameters } = whereSql(where, 't', scope(model));
+      // Keys first, so the filter, relation subqueries included, runs as a SELECT.
+      return transaction(async ({ manager: inner }) => {
+        const entity = entityOf(model);
+        const keys = await (inner as EntityManager)
+          .getRepository<DatabaseRecord>(entity)
+          .createQueryBuilder('t')
+          .select(model.primaryKey.map((property) => `t.${property}`))
+          .where(sql, parameters)
+          .getMany();
+        for (let i = 0; i < keys.length; i += DELETE_CHUNK) {
+          await (inner as EntityManager)
+            .createQueryBuilder()
+            .delete()
+            .from(entity)
+            .whereInIds(keys.slice(i, i + DELETE_CHUNK))
+            .execute();
+        }
+        return keys.length;
+      });
+    },
+    transaction,
     // Only the connection the adapter opened owns the data source.
     close: async () => {
       if (manager === dataSource.manager) await dataSource.destroy();
@@ -295,24 +379,26 @@ export function createSqlAdapter(options: SqlAdapterOptions): DatabaseAdapter {
         ...connectionOptions(new URL(url), connectOptions),
       } as DataSourceOptions;
 
-      const { tables, overrides } = await readTables(
+      const { tables, views, overrides } = await readTables(
         dataSourceOptions,
         options,
+        connectOptions,
       );
       const naming = connectOptions.naming ?? defaultNaming;
-      const entityNames = entityNamesOf(tables);
+      const all = [...tables, ...views];
+      const entityNames = entityNamesOf(all);
       const entityNameOf = (table: Table) =>
         entityNames.get(table.name) as string;
       const dataSource = await new DataSource({
         ...dataSourceOptions,
-        entities: tables.map((table) =>
+        entities: all.map((table) =>
           createEntitySchema(table, entityNameOf(table), naming),
         ),
         synchronize: false,
       }).initialize();
 
       const modelsByTable = new Map(
-        tables.map((table) => [
+        all.map((table) => [
           table,
           modelOf(
             dataSource.getMetadata(entityNameOf(table)),
@@ -320,15 +406,17 @@ export function createSqlAdapter(options: SqlAdapterOptions): DatabaseAdapter {
             options.fieldTypes,
             overrides,
             naming,
+            views.includes(table),
           ),
         ]),
       );
-      addRelations(foreignKeysOf(tables, modelsByTable, naming));
+      addRelations(foreignKeysOf(all, modelsByTable, naming));
 
       return connectionOver(
         dataSource,
         [...modelsByTable.values()],
         entityNames,
+        options.nullsFirst ?? true,
       );
     },
   };

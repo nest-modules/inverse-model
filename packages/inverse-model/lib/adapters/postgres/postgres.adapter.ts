@@ -10,6 +10,12 @@ export const postgresAdapter = createSqlAdapter({
     FROM information_schema.tables
     WHERE table_type = 'BASE TABLE'
       AND table_schema NOT IN ('pg_catalog', 'information_schema')`,
+  viewsQuery: `
+    SELECT table_schema || '.' || table_name AS name
+    FROM information_schema.views
+    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')`,
+  // PostgreSQL sorts nulls as larger than any value.
+  nullsFirst: false,
   fieldTypes: {
     smallint: 'Int',
     integer: 'Int',

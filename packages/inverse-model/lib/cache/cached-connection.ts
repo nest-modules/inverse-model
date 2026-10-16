@@ -3,7 +3,9 @@ import type {
   DatabaseConnection,
   DatabaseTransaction,
   ModelDefinition,
+  Where,
 } from '../adapters/database-adapter.interface';
+import { modelsReadBy } from '../adapters/relation-where';
 import type { CacheStore } from './cache-store.interface';
 
 export interface CacheSettings {
@@ -40,6 +42,7 @@ export function withCache(
     operation: string,
     args: unknown,
     read: () => Promise<T>,
+    where?: Where | null,
   ): Promise<T> {
     const ttl = ttlOf(model);
     if (ttl <= 0) return read();
@@ -47,7 +50,16 @@ export function withCache(
     let key: string;
     try {
       const version = (await store.get(versionKey(model))) ?? '0';
-      key = `${settings.keyPrefix}${model.source}:${version}:${operation}:${hash(args)}`;
+      // A relation filter reads other tables too, so their writes must miss it as well.
+      const others = [...modelsReadBy(model, where, connection.models)];
+      const otherVersions = await Promise.all(
+        others.map(
+          async (other) =>
+            `${other.source}@${(await store.get(versionKey(other))) ?? '0'}`,
+        ),
+      );
+      const versions = [version, ...otherVersions].join(',');
+      key = `${settings.keyPrefix}${model.source}:${versions}:${operation}:${hash(args)}`;
       const hit = await store.get(key);
       if (hit !== null) return JSON.parse(hit) as T;
     } catch (error) {
@@ -72,11 +84,22 @@ export function withCache(
 
   return {
     models: connection.models,
+    nullsFirst: connection.nullsFirst,
     find: (model, args) =>
-      cached(model, 'find', args, () => connection.find(model, args)),
+      cached(
+        model,
+        'find',
+        args,
+        () => connection.find(model, args),
+        args.where,
+      ),
     count: (model, where) =>
-      cached(model, 'count', where ?? null, () =>
-        connection.count(model, where),
+      cached(
+        model,
+        'count',
+        where ?? null,
+        () => connection.count(model, where),
+        where,
       ),
     findOne: (model, key) =>
       cached(model, 'findOne', key, () => connection.findOne(model, key)),
@@ -85,6 +108,12 @@ export function withCache(
     update: (model, key, input) =>
       written(model, () => connection.update(model, key, input)),
     delete: (model, key) => written(model, () => connection.delete(model, key)),
+    upsert: (model, input) =>
+      written(model, () => connection.upsert(model, input)),
+    insertMany: (model, inputs) =>
+      written(model, () => connection.insertMany(model, inputs)),
+    deleteMany: (model, where) =>
+      written(model, () => connection.deleteMany(model, where)),
     ...(begin && {
       transaction: (work) =>
         inTransaction(begin, store, settings, versionKey, work),
@@ -124,6 +153,18 @@ async function inTransaction<T>(
         delete: (model, key) => {
           written.add(model);
           return inner.delete(model, key);
+        },
+        upsert: (model, input) => {
+          written.add(model);
+          return inner.upsert(model, input);
+        },
+        insertMany: (model, inputs) => {
+          written.add(model);
+          return inner.insertMany(model, inputs);
+        },
+        deleteMany: (model, where) => {
+          written.add(model);
+          return inner.deleteMany(model, where);
         },
       };
       // A nested transaction joins this one, so its writes are tracked here too.

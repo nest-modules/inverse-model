@@ -14,6 +14,7 @@ export const RESERVED_TYPE_NAMES: ReadonlySet<string> = new Set([
   'String',
   'Boolean',
   'ID',
+  'PageInfo',
   ...[
     ...SHARED_TYPE_DEFS.matchAll(
       /^(?:scalar|enum|input|type|interface|union)\s+(\w+)/gm,
@@ -51,7 +52,12 @@ function claimsOf(model: ModelDefinition) {
     claim(name, 'type'),
     claim(`${name}Where`, 'filter input'),
     claim(`Create${name}Input`, 'create input'),
+    claim(`${name}ManyWhere`, 'relation filter input'),
   ];
+  if (hasKey) {
+    types.push(claim(`${name}Connection`, 'connection type'));
+    types.push(claim(`${name}Edge`, 'edge type'));
+  }
   if (sortableFields(model).length > 0) {
     types.push(claim(`${name}OrderBy`, 'order input'));
   }
@@ -59,11 +65,21 @@ function claimsOf(model: ModelDefinition) {
   if (updatable) types.push(claim(`Update${name}Input`, 'update input'));
 
   const query = [claim(names.list, 'list'), claim(names.count, 'count')];
-  if (hasKey) query.push(claim(names.byPk, 'by-key query'));
+  if (hasKey) {
+    query.push(claim(names.byPk, 'by-key query'));
+    query.push(claim(names.connection, 'connection'));
+  }
 
-  const mutation = [claim(names.create, 'create mutation')];
+  const mutation = [
+    claim(names.create, 'create mutation'),
+    claim(names.createMany, 'batch create mutation'),
+  ];
   if (updatable) mutation.push(claim(names.update, 'update mutation'));
-  if (hasKey) mutation.push(claim(names.delete, 'delete mutation'));
+  if (hasKey) {
+    mutation.push(claim(names.delete, 'delete mutation'));
+    mutation.push(claim(names.upsert, 'upsert mutation'));
+    mutation.push(claim(names.deleteMany, 'batch delete mutation'));
+  }
 
   return { types, query, mutation };
 }

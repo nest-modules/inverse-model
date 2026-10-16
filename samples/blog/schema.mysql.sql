@@ -16,3 +16,10 @@ CREATE TABLE blog_posts (
   metadata   json,
   FOREIGN KEY (author_id) REFERENCES authors (id)
 );
+
+-- Read-only in the API: listed, counted and filtered, never written.
+CREATE VIEW published_posts AS
+SELECT p.id, p.author_id, p.title, a.full_name AS author_name
+FROM blog_posts p
+JOIN authors a ON a.id = p.author_id
+WHERE p.published = true;

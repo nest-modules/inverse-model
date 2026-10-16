@@ -21,7 +21,12 @@ describe('addRelations', () => {
     const authors = model('Author', ['id']);
     const posts = model('BlogPost', ['id', 'authorId']);
     addRelations([
-      { source: posts, field: 'authorId', target: authors, reference: 'id' },
+      {
+        source: posts,
+        fields: ['authorId'],
+        target: authors,
+        references: ['id'],
+      },
     ]);
 
     expect(posts.relations).toEqual([
@@ -29,8 +34,8 @@ describe('addRelations', () => {
         property: 'author',
         kind: 'one',
         target: 'Author',
-        field: 'authorId',
-        reference: 'id',
+        fields: ['authorId'],
+        references: ['id'],
       },
     ]);
     expect(authors.relations).toEqual([
@@ -38,8 +43,8 @@ describe('addRelations', () => {
         property: 'blogPosts',
         kind: 'many',
         target: 'BlogPost',
-        field: 'id',
-        reference: 'authorId',
+        fields: ['id'],
+        references: ['authorId'],
       },
     ]);
   });
@@ -48,7 +53,12 @@ describe('addRelations', () => {
     const people = model('Person', ['id']);
     const posts = { ...model('Post', ['id', 'authorId']), plural: 'Writings' };
     addRelations([
-      { source: posts, field: 'authorId', target: people, reference: 'id' },
+      {
+        source: posts,
+        fields: ['authorId'],
+        target: people,
+        references: ['id'],
+      },
     ]);
     expect(people.relations[0].property).toBe('writings');
   });
@@ -57,12 +67,17 @@ describe('addRelations', () => {
     const users = model('User', ['id']);
     const messages = model('Message', ['id', 'senderId', 'recipientId']);
     addRelations([
-      { source: messages, field: 'senderId', target: users, reference: 'id' },
       {
         source: messages,
-        field: 'recipientId',
+        fields: ['senderId'],
         target: users,
-        reference: 'id',
+        references: ['id'],
+      },
+      {
+        source: messages,
+        fields: ['recipientId'],
+        target: users,
+        references: ['id'],
       },
     ]);
 
@@ -80,9 +95,51 @@ describe('addRelations', () => {
     const users = model('User', ['id']);
     const tasks = model('Task', ['id', 'owner', 'user']);
     addRelations([
-      { source: tasks, field: 'owner', target: users, reference: 'id' },
+      { source: tasks, fields: ['owner'], target: users, references: ['id'] },
     ]);
 
     expect(tasks.relations[0].property).toBe('user2');
+  });
+
+  it('relates composite keys and keys holding arrays', () => {
+    const editions = model('Editions', ['bookId', 'edition']);
+    const reviews = model('Reviews', ['id', 'bookId', 'edition']);
+    const tags = model('Tags', ['id']);
+    const notes = model('Notes', ['id', 'tagIds']);
+    notes.fields[1].isArray = true;
+    addRelations([
+      {
+        source: reviews,
+        fields: ['bookId', 'edition'],
+        target: editions,
+        references: ['bookId', 'edition'],
+      },
+      { source: notes, fields: ['tagIds'], target: tags, references: ['id'] },
+    ]);
+
+    expect(reviews.relations).toEqual([
+      {
+        property: 'editions',
+        kind: 'one',
+        target: 'Editions',
+        fields: ['bookId', 'edition'],
+        references: ['bookId', 'edition'],
+      },
+    ]);
+    expect(editions.relations[0]).toMatchObject({
+      property: 'reviews',
+      kind: 'many',
+      fields: ['bookId', 'edition'],
+    });
+    expect(notes.relations[0]).toMatchObject({
+      property: 'tags',
+      kind: 'many',
+    });
+    expect(tags.relations[0]).toMatchObject({
+      property: 'notes',
+      kind: 'many',
+      fields: ['id'],
+      references: ['tagIds'],
+    });
   });
 });

@@ -56,7 +56,12 @@ export function blogModels(): ModelDefinition[] {
     relations: [],
   };
   addRelations([
-    { source: posts, field: 'authorId', target: authors, reference: 'id' },
+    {
+      source: posts,
+      fields: ['authorId'],
+      target: authors,
+      references: ['id'],
+    },
   ]);
   return [authors, posts, audit];
 }
@@ -135,6 +140,28 @@ export function memoryDatabase(
         if (record) table(model).splice(table(model).indexOf(record), 1);
         return record;
       },
+      upsert: async (model, input) => {
+        log.push(`upsert ${model.source}`);
+        const record = byKey(model, input);
+        if (record) return { ...Object.assign(record, input) };
+        const created = { id: nextId++, ...input };
+        table(model).push(created);
+        return { ...created };
+      },
+      insertMany: async (model, inputs) => {
+        log.push(`insertMany ${model.source}`);
+        for (const input of inputs)
+          table(model).push({ id: nextId++, ...input });
+        return inputs.length;
+      },
+      deleteMany: async (model, where) => {
+        log.push(`deleteMany ${model.source}`);
+        const doomed = table(model).filter((row) => matches(row, where));
+        for (const row of doomed)
+          table(model).splice(table(model).indexOf(row), 1);
+        return doomed.length;
+      },
+      nullsFirst: true,
       close: async () => {},
     };
     if (options.transactions !== false) {

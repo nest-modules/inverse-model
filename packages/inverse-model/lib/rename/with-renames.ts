@@ -3,8 +3,10 @@ import type {
   DatabaseRecord,
   FindArgs,
   ModelDefinition,
+  RelationDefinition,
   Where,
 } from '../adapters/database-adapter.interface';
+import { mapWhere } from '../adapters/relation-where';
 import { addRelations, type ForeignKey } from '../adapters/relations';
 
 export interface InverseRenameOptions {
@@ -21,6 +23,8 @@ interface PropertyMap {
   original: ModelDefinition;
   toApi: Map<string, string>;
   toOriginal: Map<string, string>;
+  /** Relation properties of the copy → those of the original, for relation filters. */
+  relations: Map<string, string>;
 }
 
 function checkName(name: string, what: string) {
@@ -82,30 +86,58 @@ function renamedModels(
       original: model,
       toApi: renames,
       toOriginal: new Map([...renames].map(([from, to]) => [to, from])),
+      relations: new Map(),
     });
   }
   const names = [...copies.values()].map((copy) => copy.name);
   const taken = names.find((n, i) => names.indexOf(n) !== i);
   if (taken) throw new Error(`rename: two tables would be named ${taken}`);
 
-  // Every `one` relation is a foreign key; adding them again names both ends after the renames.
+  // Every `one` relation, and every `many` one held in an array, is a
+  // foreign key; adding them again names both ends after the renames.
   const byName = new Map(models.map((model) => [model.name, model]));
+  const apiOf = (of: ModelDefinition, property: string) =>
+    fieldRenames.get(of)?.get(property) ?? property;
+  const holdsKey = (model: ModelDefinition, relation: RelationDefinition) =>
+    relation.kind === 'one' ||
+    model.fields.some(
+      (field) => field.property === relation.fields[0] && field.isArray,
+    );
   const foreignKeys: ForeignKey[] = models.flatMap((model) =>
     model.relations
-      .filter((relation) => relation.kind === 'one')
+      .filter((relation) => holdsKey(model, relation))
       .map((relation) => {
         const target = byName.get(relation.target) as ModelDefinition;
-        const apiOf = (of: ModelDefinition, property: string) =>
-          fieldRenames.get(of)?.get(property) ?? property;
         return {
           source: copies.get(model) as ModelDefinition,
-          field: apiOf(model, relation.field),
+          fields: relation.fields.map((field) => apiOf(model, field)),
           target: copies.get(target) as ModelDefinition,
-          reference: apiOf(target, relation.reference),
+          references: relation.references.map((reference) =>
+            apiOf(target, reference),
+          ),
         };
       }),
   );
   addRelations(foreignKeys);
+
+  // Each new relation is the original one with the same kind, target and fields.
+  const originalOf = new Map(
+    [...copies].map(([original, copy]) => [copy.name, original]),
+  );
+  for (const [model, copy] of copies) {
+    const relations = (maps.get(copy) as PropertyMap).relations;
+    for (const relation of copy.relations) {
+      const target = originalOf.get(relation.target) as ModelDefinition;
+      const found = model.relations.find(
+        (candidate) =>
+          candidate.kind === relation.kind &&
+          candidate.target === target.name &&
+          candidate.fields.map((field) => apiOf(model, field)).join() ===
+            relation.fields.join(),
+      );
+      if (found) relations.set(relation.property, found.property);
+    }
+  }
   return { models: [...copies.values()], maps };
 }
 
@@ -122,26 +154,6 @@ const renameKeys = (
         ]),
       );
 
-function renameWhere(
-  where: Where | null | undefined,
-  names: ReadonlyMap<string, string>,
-): Where | null | undefined {
-  if (!where || names.size === 0) return where;
-  const renamed: Where = {};
-  for (const [key, value] of Object.entries(where)) {
-    if (key === 'AND' || key === 'OR') {
-      renamed[key] = (value as Where[] | null | undefined)?.map(
-        (child) => renameWhere(child, names) as Where,
-      );
-    } else if (key === 'NOT') {
-      renamed.NOT = renameWhere(value as Where | null, names);
-    } else {
-      renamed[names.get(key) ?? key] = value;
-    }
-  }
-  return renamed;
-}
-
 function renamedConnection(
   connection: DatabaseConnection,
   models: ModelDefinition[],
@@ -153,12 +165,23 @@ function renamedConnection(
       original: model,
       toApi: new Map(),
       toOriginal: new Map(),
+      relations: new Map(),
     };
   const out = (model: ModelDefinition, record: DatabaseRecord | null) =>
     record && renameKeys(record, mapOf(model).toApi);
   const into = (model: ModelDefinition, record: DatabaseRecord) =>
     renameKeys(record, mapOf(model).toOriginal);
   const original = (model: ModelDefinition) => mapOf(model).original;
+  /** The filter in the original properties, relation filters included. */
+  const renameWhere = (
+    model: ModelDefinition,
+    where: Where | null | undefined,
+  ) =>
+    mapWhere(where, model, models, {
+      field: (of, property) => mapOf(of).toOriginal.get(property) ?? property,
+      relation: (of, relation) =>
+        mapOf(of).relations.get(relation.property) ?? relation.property,
+    });
 
   const renamed: DatabaseConnection = {
     models,
@@ -166,7 +189,7 @@ function renamedConnection(
       const names = mapOf(model).toOriginal;
       const findArgs: FindArgs = {
         ...args,
-        where: renameWhere(args.where, names),
+        where: await renameWhere(model, args.where),
         orderBy: args.orderBy?.map((entry) => renameKeys(entry, names)) as
           | FindArgs['orderBy']
           | undefined,
@@ -174,11 +197,9 @@ function renamedConnection(
       const records = await connection.find(original(model), findArgs);
       return records.map((record) => out(model, record) as DatabaseRecord);
     },
-    count: (model, where) =>
-      connection.count(
-        original(model),
-        renameWhere(where, mapOf(model).toOriginal),
-      ),
+    nullsFirst: connection.nullsFirst,
+    count: async (model, where) =>
+      connection.count(original(model), await renameWhere(model, where)),
     findOne: async (model, key) =>
       out(model, await connection.findOne(original(model), into(model, key))),
     insert: async (model, input) =>
@@ -197,6 +218,18 @@ function renamedConnection(
       ),
     delete: async (model, key) =>
       out(model, await connection.delete(original(model), into(model, key))),
+    upsert: async (model, input) =>
+      out(
+        model,
+        await connection.upsert(original(model), into(model, input)),
+      ) as DatabaseRecord,
+    insertMany: (model, inputs) =>
+      connection.insertMany(
+        original(model),
+        inputs.map((input) => into(model, input)),
+      ),
+    deleteMany: async (model, where) =>
+      connection.deleteMany(original(model), await renameWhere(model, where)),
     close: () => connection.close(),
   };
   if (connection.transaction) {

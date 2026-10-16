@@ -22,3 +22,12 @@ CREATE TABLE dbo.blog_posts (
   rating     float,
   metadata   nvarchar(max)
 );
+
+-- Read-only in the API: listed, counted and filtered, never written.
+-- CREATE VIEW must start its batch, hence the EXEC.
+IF OBJECT_ID('dbo.published_posts') IS NULL
+EXEC('CREATE VIEW dbo.published_posts AS
+SELECT p.id, p.author_id, p.title, a.full_name AS author_name
+FROM dbo.blog_posts p
+JOIN dbo.authors a ON a.id = p.author_id
+WHERE p.published = 1');

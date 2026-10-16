@@ -150,6 +150,9 @@ describe('security', () => {
         'createBlogPosts',
         'updateBlogPosts',
         'deleteBlogPosts',
+        'upsertBlogPosts',
+        'createManyBlogPosts',
+        'deleteManyBlogPosts',
       ]);
     });
 

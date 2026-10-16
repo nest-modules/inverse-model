@@ -1,12 +1,15 @@
 import { lowerFirst, pascalCase, pluralOf } from '../utils/naming';
 import type { ModelDefinition } from './database-adapter.interface';
 
-/** A single-column foreign key: `source.field` references `target.reference`. */
+/**
+ * A foreign key: `source.fields` reference `target.references`, column by
+ * column. A single field holding an array references a row per element.
+ */
 export interface ForeignKey {
   source: ModelDefinition;
-  field: string;
+  fields: string[];
   target: ModelDefinition;
-  reference: string;
+  references: string[];
 }
 
 const takenNames = (model: ModelDefinition) =>
@@ -21,24 +24,36 @@ function unique(name: string, taken: Set<string>): string {
   return candidate;
 }
 
+const holdsArray = (model: ModelDefinition, fields: string[]) =>
+  fields.length === 1 &&
+  model.fields.some((field) => field.property === fields[0] && field.isArray);
+
 /**
  * Adds both ends of each foreign key to its models: `blog_posts.author_id`
  * gives `BlogPost.author` and `Author.blogPosts`.
  */
 export function addRelations(foreignKeys: readonly ForeignKey[]): void {
   for (const key of foreignKeys) {
-    const { source, field, target, reference } = key;
+    const { source, fields, target, references } = key;
+    const isArray = holdsArray(source, fields);
 
-    // author_id and authorId become author; a key without that suffix is named after the target.
-    const stripped = field.replace(/Id$/, '');
+    // author_id and authorId become author, and tag_ids tags; a composite key
+    // or one without that suffix is named after the target.
+    const [field] = fields;
+    const stripped =
+      fields.length === 1
+        ? isArray
+          ? field.replace(/Ids$/, 's')
+          : field.replace(/Id$/, '')
+        : '';
     const one =
       stripped && stripped !== field ? stripped : lowerFirst(target.name);
     source.relations.push({
       property: unique(one, takenNames(source)),
-      kind: 'one',
+      kind: isArray ? 'many' : 'one',
       target: target.name,
-      field,
-      reference,
+      fields,
+      references,
     });
 
     // Two keys from the same table to the same target need telling apart.
@@ -47,13 +62,15 @@ export function addRelations(foreignKeys: readonly ForeignKey[]): void {
     );
     const plural = lowerFirst(pluralOf(source));
     const many =
-      siblings.length > 1 ? `${plural}By${pascalCase(field)}` : plural;
+      siblings.length > 1
+        ? `${plural}By${pascalCase(fields.join('_'))}`
+        : plural;
     target.relations.push({
       property: unique(many, takenNames(target)),
       kind: 'many',
       target: source.name,
-      field: reference,
-      reference: field,
+      fields: references,
+      references: fields,
     });
   }
 }

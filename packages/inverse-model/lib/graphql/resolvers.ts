@@ -7,6 +7,8 @@ import type {
   Where,
 } from '../adapters/database-adapter.interface';
 import { createWrites, type Writes } from '../hooks/writes';
+import { batchMutations } from './batch-mutations';
+import { connectionQuery } from './connection';
 import { operationNames } from './operation-names';
 import { relationLoader } from './relation-loader';
 import { GraphQLDateTime, GraphQLJSON } from './scalars';
@@ -19,7 +21,7 @@ export interface PaginationSettings {
   maxLimit: number;
 }
 
-type Resolver = (
+export type Resolver = (
   parent: DatabaseRecord,
   args: Record<string, unknown>,
   context: object,
@@ -58,10 +60,14 @@ export function createResolvers(
   function relationResolver(relation: RelationDefinition): Resolver {
     const target = models.get(relation.target) as ModelDefinition;
     return async (parent, args, context) => {
-      const value = parent[relation.field];
-      if (value === null || value === undefined) {
+      const values = relation.fields.map((field) => parent[field]);
+      if (values.some((value) => value === null || value === undefined)) {
         return relation.kind === 'one' ? null : [];
       }
+      // A single key holding an array references one record per element.
+      const elements = Array.isArray(values[0])
+        ? (values[0] as unknown[])
+        : null;
 
       const listArgs = args as ListArgs;
       const filtered =
@@ -73,24 +79,39 @@ export function createResolvers(
         // A filtered or paged list cannot share a batch with its siblings.
         const where: Where = {
           AND: [
-            { [relation.reference]: { eq: value } },
+            ...relation.references.map((reference, i) => ({
+              [reference]: elements ? { in: elements } : { eq: values[i] },
+            })),
             ...(listArgs.where ? [listArgs.where] : []),
           ],
         };
         return connection.find(target, page(target, { ...listArgs, where }));
       }
 
-      const records = await relationLoader(
+      const loader = relationLoader(
         contextOf(context),
         connection,
         target,
-        relation.reference,
-      ).load(value);
+        relation.references,
+      );
+      const records = elements
+        ? (await loader.loadMany(elements.map((element) => [element]))).flatMap(
+            (found) => (found instanceof Error ? [] : found),
+          )
+        : await loader.load(values);
       return relation.kind === 'one'
         ? (records[0] ?? null)
         : records.slice(0, pagination.maxLimit);
     };
   }
+
+  const relationResolvers = (model: ModelDefinition) =>
+    Object.fromEntries(
+      model.relations.map((relation) => [
+        relation.property,
+        relationResolver(relation),
+      ]),
+    );
 
   const Query: Record<string, Resolver> = { health: () => 'ok' };
   const Mutation: Record<string, Resolver> = {};
@@ -102,12 +123,17 @@ export function createResolvers(
       connection.find(model, page(model, args as ListArgs));
     Query[names.count] = (_parent, args) =>
       connection.count(model, args.where as Where | undefined);
-    Mutation[names.create] = (_parent, args, context) =>
-      writes.create(model, args.input as DatabaseRecord, context);
-
+    Object.assign(Query, connectionQuery(connection, model, pagination));
     if (model.primaryKey.length > 0) {
       Query[names.byPk] = (_parent, args) =>
         connection.findOne(model, keyOf(model, args));
+    }
+    types[model.name] = relationResolvers(model);
+    if (model.readOnly) continue;
+
+    Mutation[names.create] = (_parent, args, context) =>
+      writes.create(model, args.input as DatabaseRecord, context);
+    if (model.primaryKey.length > 0) {
       // A table whose columns are all key, like a join table, has nothing to update.
       if (updatableFields(model).length > 0) {
         Mutation[names.update] = (_parent, args, context) =>
@@ -121,12 +147,9 @@ export function createResolvers(
       Mutation[names.delete] = (_parent, args, context) =>
         writes.delete(model, keyOf(model, args), context);
     }
-
-    types[model.name] = Object.fromEntries(
-      model.relations.map((relation) => [
-        relation.property,
-        relationResolver(relation),
-      ]),
+    Object.assign(
+      Mutation,
+      batchMutations(connection, model, pagination, writes),
     );
   }
 
@@ -134,7 +157,7 @@ export function createResolvers(
     DateTime: GraphQLDateTime,
     JSON: GraphQLJSON,
     Query,
-    ...(connection.models.length > 0 ? { Mutation } : {}),
+    ...(Object.keys(Mutation).length > 0 ? { Mutation } : {}),
     ...types,
   };
 }

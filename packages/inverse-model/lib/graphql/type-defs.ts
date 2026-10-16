@@ -4,6 +4,13 @@ import type {
   ModelDefinition,
   RelationDefinition,
 } from '../adapters/database-adapter.interface';
+import { batchMutationFields } from './batch-mutations';
+import {
+  connectionField,
+  connectionTypeDefs,
+  hasConnection,
+  PAGE_INFO_TYPE_DEFS,
+} from './connection';
 import { operationNames } from './operation-names';
 
 export const SHARED_TYPE_DEFS = `scalar DateTime
@@ -129,6 +136,17 @@ function relationField(
     : `${relation.property}${listArguments(target)}: [${target.name}!]!`;
 }
 
+/** A `one` relation filters on the related model; a `many` one on some, none or every related record. */
+const relationFilter = (relation: RelationDefinition) =>
+  `${relation.property}: ${relation.target}${relation.kind === 'one' ? 'Where' : 'ManyWhere'}`;
+
+const isManyTarget = (model: ModelDefinition, models: ModelDefinition[]) =>
+  models.some((other) =>
+    other.relations.some(
+      (relation) => relation.kind === 'many' && relation.target === model.name,
+    ),
+  );
+
 function modelTypeDefs(
   model: ModelDefinition,
   models: Map<string, ModelDefinition>,
@@ -146,16 +164,34 @@ function modelTypeDefs(
       `OR: [${name}Where!]`,
       `NOT: ${name}Where`,
       ...model.fields.map((field) => `${field.property}: ${filterOf(field)}`),
+      ...model.relations.map(relationFilter),
     ]),
-    block(
-      'input',
-      `Create${name}Input`,
-      model.fields.map(
-        (field) =>
-          `${field.property}: ${fieldType(field, !field.isNullable && !field.hasDefault)}`,
-      ),
-    ),
+    ...connectionTypeDefs(model),
   ];
+  if (isManyTarget(model, [...models.values()])) {
+    typeDefs.push(
+      block('input', `${name}ManyWhere`, [
+        `"Some related record matches."`,
+        `some: ${name}Where`,
+        `"No related record matches."`,
+        `none: ${name}Where`,
+        `"Every related record matches; true when there are none."`,
+        `every: ${name}Where`,
+      ]),
+    );
+  }
+  if (!model.readOnly) {
+    typeDefs.push(
+      block(
+        'input',
+        `Create${name}Input`,
+        model.fields.map(
+          (field) =>
+            `${field.property}: ${fieldType(field, !field.isNullable && !field.hasDefault)}`,
+        ),
+      ),
+    );
+  }
 
   const sortable = sortableFields(model);
   if (sortable.length > 0) {
@@ -169,7 +205,7 @@ function modelTypeDefs(
   }
 
   const updatable = updatableFields(model);
-  if (model.primaryKey.length > 0 && updatable.length > 0) {
+  if (!model.readOnly && model.primaryKey.length > 0 && updatable.length > 0) {
     typeDefs.push(
       block(
         'input',
@@ -192,6 +228,8 @@ function queryFields(model: ModelDefinition): string[] {
   if (model.primaryKey.length > 0) {
     fields.push(`${names.byPk}(${keyArguments(model)}): ${model.name}`);
   }
+  const connection = connectionField(model, sortableFields(model).length > 0);
+  if (connection) fields.push(connection);
   return fields;
 }
 
@@ -209,7 +247,7 @@ function mutationFields(model: ModelDefinition): string[] {
     }
     fields.push(`${names.delete}(${keyArguments(model)}): ${model.name}`);
   }
-  return fields;
+  return [...fields, ...batchMutationFields(model)];
 }
 
 /** SDL of the whole API: per model, a type, its inputs, its queries and its mutations. */
@@ -218,6 +256,7 @@ export function createTypeDefs(models: readonly ModelDefinition[]): string {
   const mutations = models.flatMap(mutationFields);
   return [
     SHARED_TYPE_DEFS,
+    ...(models.some(hasConnection) ? [PAGE_INFO_TYPE_DEFS] : []),
     // GraphQL requires a Query root type even for a database with no tables.
     block('type', 'Query', ['health: String!', ...models.flatMap(queryFields)]),
     ...(mutations.length > 0 ? [block('type', 'Mutation', mutations)] : []),

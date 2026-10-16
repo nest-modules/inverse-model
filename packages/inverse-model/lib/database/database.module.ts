@@ -29,6 +29,7 @@ async function connect(options: InverseModelOptions) {
     const opened = await findAdapter(options.url).connect(options.url, {
       ssl: options.ssl,
       naming: resolveNaming(options.naming),
+      views: options.views,
     });
     return options.rename ? withRenames(opened, options.rename) : opened;
   });

@@ -1,5 +1,9 @@
 import type { ApolloDriverConfig } from '@nestjs/apollo';
-import type { SslOptions } from './adapters/database-adapter.interface';
+import type {
+  SslOptions,
+  ViewForeignKey,
+  ViewOptions,
+} from './adapters/database-adapter.interface';
 import type {
   InverseAuthorize,
   InverseQueryLimits,
@@ -27,7 +31,7 @@ export type { InverseApi, InverseExtendOptions } from './extend/extend-schema';
 export type * from './hooks/write-hooks.interfaces';
 export type { Writes } from './hooks/writes';
 export type { InverseRenameOptions } from './rename/with-renames';
-export type { SslOptions };
+export type { SslOptions, ViewForeignKey, ViewOptions };
 
 export interface InverseCacheOptions {
   /** Redis connection string, e.g. `redis://localhost:6379`. Needs the `ioredis` package. */
@@ -66,6 +70,12 @@ export interface InverseModelOptions {
   pagination?: InversePaginationOptions;
   /** How tables and columns are named in the API; by default `blog_posts.created_at` is `BlogPost.createdAt`. */
   naming?: InverseNamingOptions;
+  /**
+   * Primary and foreign keys of SQL views, by view name, e.g.
+   * `{ published_posts: { primaryKey: ['id'] } }`. Views are exposed read-only
+   * either way; a key gives them a by-key query and cursor pagination.
+   */
+  views?: Record<string, ViewOptions>;
   /** Overrides for the Apollo server; the schema itself always comes from the database. */
   graphql?: Omit<ApolloDriverConfig, 'driver' | 'typeDefs' | 'resolvers'>;
   /**

@@ -43,11 +43,11 @@ describe.each(DATABASES)('security over %s', (name, url) => {
         (model) => model.name === modelName,
       ) as ModelDefinition;
     for (const who of ['ann', 'bob']) {
-      records[who] = await connection.insert(modelNamed('Authors'), {
+      records[who] = await connection.insert(modelNamed('Author'), {
         fullName: `${who} ${tag}`,
         email: `${who}-${tag}@example.com`,
       });
-      records[`${who}Post`] = await connection.insert(modelNamed('BlogPosts'), {
+      records[`${who}Post`] = await connection.insert(modelNamed('BlogPost'), {
         authorId: records[who].id,
         title: `${who}'s ${tag}`,
       });
@@ -62,8 +62,8 @@ describe.each(DATABASES)('security over %s', (name, url) => {
   afterAll(async () => {
     if (!url) return;
     await api.stop();
-    const posts = connection.models.find((model) => model.name === 'BlogPosts');
-    const authors = connection.models.find((model) => model.name === 'Authors');
+    const posts = connection.models.find((model) => model.name === 'BlogPost');
+    const authors = connection.models.find((model) => model.name === 'Author');
     for (const who of ['ann', 'bob']) {
       await connection.delete(posts as ModelDefinition, {
         id: records[`${who}Post`].id,
@@ -80,9 +80,9 @@ describe.each(DATABASES)('security over %s', (name, url) => {
       api.models
         .find((model) => model.name === modelName)
         ?.fields.map((field) => field.name);
-    expect(fields('Authors')).not.toContain('email');
-    expect(fields('Authors')).toContain('full_name');
-    expect(fields('BlogPosts')).not.toContain('metadata');
+    expect(fields('Author')).not.toContain('email');
+    expect(fields('Author')).toContain('full_name');
+    expect(fields('BlogPost')).not.toContain('metadata');
   });
 
   run('scopes lists, counts, lookups by key and relations', async () => {
@@ -91,7 +91,7 @@ describe.each(DATABASES)('security over %s', (name, url) => {
       `{
         authors(where: { fullName: { contains: "${tag}" } }) { fullName }
         authorsCount(where: { fullName: { contains: "${tag}" } })
-        bob: authorsByPk(id: ${id(records.bob)}) { id }
+        bob: author(id: ${id(records.bob)}) { id }
         blogPosts(where: { title: { contains: "${tag}" } }, orderBy: [{ title: ASC }]) {
           title
           author { fullName }
@@ -115,16 +115,16 @@ describe.each(DATABASES)('security over %s', (name, url) => {
     const bob = JSON.stringify(records.bob.id);
     const response = await api.run(
       `mutation {
-        updateAuthors(id: ${bob}, input: { fullName: "taken" }) { id }
-        deleteAuthors(id: ${bob}) { id }
+        updateAuthor(id: ${bob}, input: { fullName: "taken" }) { id }
+        deleteAuthor(id: ${bob}) { id }
       }`,
       as('ann'),
     );
     expect(response).toEqual({
-      data: { updateAuthors: null, deleteAuthors: null },
+      data: { updateAuthor: null, deleteAuthor: null },
     });
     const authors = connection.models.find(
-      (model) => model.name === 'Authors',
+      (model) => model.name === 'Author',
     ) as ModelDefinition;
     await expect(
       connection.findOne(authors, { id: records.bob.id }),
@@ -138,7 +138,7 @@ describe.each(DATABASES)('security over %s', (name, url) => {
       logger.error.mockClear();
       // email is required but excluded, so the insert fails in the database.
       const response = await api.run(
-        `mutation { createAuthors(input: { fullName: "${tag}" }) { id } }`,
+        `mutation { createAuthor(input: { fullName: "${tag}" }) { id } }`,
         as('ann'),
       );
       expect(response.errors).toEqual([
@@ -177,7 +177,7 @@ describe('scoped Redis cache over postgres', () => {
       },
     });
     const authors = database.models.find(
-      (model) => model.name === 'Authors',
+      (model) => model.name === 'Author',
     ) as ModelDefinition;
     const tag = unique('cache');
     const created = await Promise.all(

@@ -25,7 +25,8 @@ export interface FieldDefinition {
 
 /**
  * Link to another model through a foreign key. `one` points from the model
- * holding the key to the row it references; `many` is the way back.
+ * holding the key to the row it references; `many` is the way back, or a key
+ * holding an array of references (MongoDB).
  */
 export interface RelationDefinition {
   /** Property in the GraphQL API, e.g. `author` or `blogPosts`. */
@@ -33,10 +34,10 @@ export interface RelationDefinition {
   kind: 'one' | 'many';
   /** Name of the related model. */
   target: string;
-  /** Property of this model whose value is looked up. */
-  field: string;
-  /** Property of the related model that must equal `field`. */
-  reference: string;
+  /** Properties of this model whose values are looked up; more than one for a composite key. */
+  fields: string[];
+  /** Properties of the related model that must equal `fields`, in the same order. */
+  references: string[];
 }
 
 /** A table or collection of the database. */
@@ -51,7 +52,7 @@ export interface ModelDefinition {
   /** Properties of the primary key; empty when the table has none. */
   primaryKey: string[];
   relations: RelationDefinition[];
-  /** Exposed without create, update or delete mutations. */
+  /** Exposed without create, update or delete mutations: a view, or a table made read-only. */
   readOnly?: boolean;
 }
 
@@ -69,12 +70,30 @@ export interface FieldFilter {
   isNull?: boolean;
 }
 
-/** Filter keyed by property, combined with AND, OR and NOT. */
+/**
+ * Filter on a `many` relation: some, none or every related record matches.
+ * A `one` relation is filtered with a plain Where on the related model.
+ */
+export interface RelationFilter {
+  some?: Where | null;
+  none?: Where | null;
+  every?: Where | null;
+}
+
+/** Filter keyed by field or relation property, combined with AND, OR and NOT. */
 export type Where = {
   AND?: Where[] | null;
   OR?: Where[] | null;
   NOT?: Where | null;
-} & { [property: string]: FieldFilter | Where | Where[] | null | undefined };
+} & {
+  [property: string]:
+    | FieldFilter
+    | RelationFilter
+    | Where
+    | Where[]
+    | null
+    | undefined;
+};
 
 export type SortDirection = 'ASC' | 'DESC';
 
@@ -121,6 +140,17 @@ export interface DatabaseConnection {
   transaction?<T>(
     work: (transaction: DatabaseTransaction) => Promise<T>,
   ): Promise<T>;
+  /** Updates the record with the primary key in `input`, or creates it when there is none. */
+  upsert(
+    model: ModelDefinition,
+    input: DatabaseRecord,
+  ): Promise<DatabaseRecord>;
+  /** Creates every record in one statement and returns how many. */
+  insertMany(model: ModelDefinition, inputs: DatabaseRecord[]): Promise<number>;
+  /** Deletes every record matching `where` and returns how many. */
+  deleteMany(model: ModelDefinition, where?: Where | null): Promise<number>;
+  /** Whether nulls sort before every other value in ascending order. */
+  readonly nullsFirst: boolean;
   close(): Promise<void>;
 }
 
@@ -149,11 +179,29 @@ export interface SslOptions {
   key?: string;
 }
 
+/** A foreign key a view's rows hold, in column names. */
+export interface ViewForeignKey {
+  columns: string[];
+  /** Referenced table or view, e.g. `authors`. */
+  table: string;
+  references: string[];
+}
+
+/** What a view cannot tell about itself: its key and the keys it holds. */
+export interface ViewOptions {
+  /** Columns that identify a row; gives the view a by-key query and cursor pagination. */
+  primaryKey?: string[];
+  /** Gives the view relations both ways, as a table's foreign keys do. */
+  foreignKeys?: ViewForeignKey[];
+}
+
 export interface ConnectOptions {
   /** True turns TLS on with the defaults of the driver. */
   ssl?: boolean | SslOptions;
   /** How tables and columns are named in the API; the defaults of `defaultNaming` when left out. */
   naming?: Naming;
+  /** Per view name, with or without its schema. */
+  views?: Readonly<Record<string, ViewOptions>>;
 }
 
 /** Knows how to read and write one kind of database. */

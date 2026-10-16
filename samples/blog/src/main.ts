@@ -10,6 +10,15 @@ const { DATABASE_URL, REDIS_URL } = process.env;
     InverseModelModule.forRoot({
       url: DATABASE_URL!,
       cache: REDIS_URL ? { url: REDIS_URL, ttl: 30 } : undefined,
+      // A view has no keys of its own; these give it a by-key query and an author.
+      views: {
+        published_posts: {
+          primaryKey: ['id'],
+          foreignKeys: [
+            { columns: ['author_id'], table: 'authors', references: ['id'] },
+          ],
+        },
+      },
     }),
   ],
 })

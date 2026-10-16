@@ -16,9 +16,13 @@ describe('operationNames', () => {
       list: 'blogPosts',
       count: 'blogPostsCount',
       byPk: 'blogPost',
+      connection: 'blogPostsConnection',
       create: 'createBlogPost',
       update: 'updateBlogPost',
       delete: 'deleteBlogPost',
+      upsert: 'upsertBlogPost',
+      createMany: 'createManyBlogPosts',
+      deleteMany: 'deleteManyBlogPosts',
     });
   });
 

@@ -1,4 +1,5 @@
 import type {
+  FieldDefinition,
   FieldFilter,
   ModelDefinition,
   Where,
@@ -17,13 +18,15 @@ const escapeRegex = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * MongoDB query for a filter. Properties become field names, and values of
- * ID fields go through `toId` so hex strings match ObjectIds.
+ * MongoDB query for a filter. Properties become field paths (`pathOf`, the
+ * field name unless given), and values of ID fields go through `toId` so hex
+ * strings match ObjectIds. Relation filters must be resolved beforehand.
  */
 export function mongoFilter(
   where: Where | null | undefined,
   model: ModelDefinition,
   toId: (value: unknown) => unknown,
+  pathOf: (field: FieldDefinition) => string = (field) => field.name,
 ): Record<string, unknown> {
   const fieldOf = (property: string) =>
     model.fields.find((field) => field.property === property);
@@ -61,7 +64,7 @@ export function mongoFilter(
         if (!field) continue;
         const condition = conditions(value as FieldFilter, field.type === 'ID');
         if (Object.keys(condition).length > 0) {
-          clauses.push({ [field.name]: condition });
+          clauses.push({ [pathOf(field)]: condition });
         }
       }
     }

@@ -44,8 +44,8 @@ describe.each(DATABASES)('hooks on %s', (name, url) => {
       connection.models.find(
         (model) => model.name === modelName,
       ) as ModelDefinition;
-    authors = modelNamed('Authors');
-    posts = modelNamed('BlogPosts');
+    authors = modelNamed('Author');
+    posts = modelNamed('BlogPost');
   });
 
   afterAll(() => connection?.close());
@@ -169,6 +169,14 @@ describe.each(DATABASES)('hooks on %s', (name, url) => {
     });
     expect(found).toMatchObject([{ title: 'Renamed' }]);
     expect(String(found[0].writerId)).toBe(String(author.id));
+    // Relation filters go through the renames too.
+    const writers = await renamed.find(writer, {
+      where: {
+        email: { eq: email },
+        articles: { some: { title: { eq: 'Renamed' } } },
+      },
+    });
+    expect(writers).toMatchObject([{ name: 'Ada' }]);
 
     await renamed.delete(article, { id: post.id });
     await renamed.delete(writer, { id: author.id });
@@ -194,7 +202,7 @@ describe('hooks with the Redis cache over postgres', () => {
       },
     });
     authors = database.models.find(
-      (model) => model.name === 'Authors',
+      (model) => model.name === 'Author',
     ) as ModelDefinition;
   });
 

@@ -39,8 +39,8 @@ describe('withRenames', () => {
         property: 'writer',
         kind: 'one',
         target: 'Authors',
-        field: 'writerId',
-        reference: 'id',
+        fields: ['writerId'],
+        references: ['id'],
       },
     ]);
     expect(authors.relations).toEqual([
@@ -48,8 +48,8 @@ describe('withRenames', () => {
         property: 'articles',
         kind: 'many',
         target: 'Article',
-        field: 'id',
-        reference: 'writerId',
+        fields: ['id'],
+        references: ['writerId'],
       },
     ]);
 

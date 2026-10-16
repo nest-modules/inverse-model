@@ -43,18 +43,21 @@ type Query {
   authors(where: AuthorWhere, orderBy: [AuthorOrderBy!], limit: Int, offset: Int): [Author!]!
   authorsCount(where: AuthorWhere): Int!
   author(id: Int!): Author
+  authorsConnection(where: AuthorWhere, orderBy: [AuthorOrderBy!], first: Int, after: String, last: Int, before: String): AuthorConnection!
   blogPosts(where: BlogPostWhere, orderBy: [BlogPostOrderBy!], limit: Int, offset: Int): [BlogPost!]!
   blogPostsCount(where: BlogPostWhere): Int!
   blogPost(id: String!): BlogPost
+  blogPostsConnection(…): BlogPostConnection!
 }
 
 type Mutation {
   createAuthor(input: CreateAuthorInput!): Author!
   updateAuthor(id: Int!, input: UpdateAuthorInput!): Author
   deleteAuthor(id: Int!): Author
-  createBlogPost(input: CreateBlogPostInput!): BlogPost!
-  updateBlogPost(id: String!, input: UpdateBlogPostInput!): BlogPost
-  deleteBlogPost(id: String!): BlogPost
+  upsertAuthor(input: CreateAuthorInput!): Author!
+  createManyAuthors(inputs: [CreateAuthorInput!]!): Int!
+  deleteManyAuthors(where: AuthorWhere!): Int!
+  # … the same for BlogPost
 }
 
 type Author {
@@ -83,17 +86,24 @@ type BlogPost {
     title
     author { fullName }
   }
+  authorsConnection(first: 20, where: { blogPosts: { some: { published: { eq: true } } } }) {
+    edges { cursor node { fullName } }
+    pageInfo { hasNextPage endCursor }
+    totalCount
+  }
 }
 ```
 
-- **Names.** Types are the table names in singular PascalCase (`blog_posts` → `BlogPost`, `people` → `Person`), and fields are the column names in camelCase (`created_at` → `createdAt`). Lists and counts take the plural (`blogPosts`, `blogPostsCount`), the by-key query and the mutations the singular (`blogPost(id:)`, `createBlogPost`). A word with the same singular and plural, like `news`, gets `newsByPk` for its by-key query. The schema of a table is left out of its name; the `naming` option changes any of this.
-- **Name checks.** If two tables end up with the same name (`public.users` and `audit.users` are both `User`), a name clashes with one the API already uses (`Query`, `Int`, `DateTime`, `StringFilter`…), or a name is not valid in GraphQL (`1st_quarter`), the app fails to start with an error that lists the tables involved.
-- **Filters.** Each field takes `eq`, `ne` and `isNull`. Numbers and dates add `gt`, `gte`, `lt`, `lte` and `in`, and strings add `in` and a case-insensitive `contains`. Conditions combine with `AND`, `OR` and `NOT`.
-- **Pagination.** `limit` and `offset`. Without `orderBy`, lists are sorted by primary key so pages are stable.
-- **Relations.** Each single-column foreign key gives a field on both sides: `BlogPosts.author` and `Authors.blogPosts`. Lookups are batched per request, so a list of 100 posts with their authors takes two queries.
-- **Keys.** Tables without a primary key are only listed and created: they get no by-key query, `update` or `delete`. Tables whose columns are all key, like join tables, get no `update`.
+- **Names.** Types are the table names in singular PascalCase (`blog_posts` → `BlogPost`, `people` → `Person`), and fields are the column names in camelCase (`created_at` → `createdAt`). Lists, counts and connections take the plural (`blogPosts`, `blogPostsCount`, `blogPostsConnection`, `createManyBlogPosts`), the by-key query and the other mutations the singular (`blogPost(id:)`, `createBlogPost`, `upsertBlogPost`). A word with the same singular and plural, like `news`, gets `newsByPk` for its by-key query. The schema of a table is left out of its name; the `naming` option changes any of this.
+- **Name checks.** If two tables end up with the same name (`public.users` and `audit.users` are both `User`), a name clashes with one the API already uses (`Query`, `Int`, `DateTime`, `StringFilter`, `PageInfo`…), or a name is not valid in GraphQL (`1st_quarter`), the app fails to start with an error that lists the tables involved.
+- **Filters.** Each field takes `eq`, `ne` and `isNull`. Numbers and dates add `gt`, `gte`, `lt`, `lte` and `in`, and strings add `in` and a case-insensitive `contains`. Conditions combine with `AND`, `OR` and `NOT`. Relations filter too: `author: { fullName: { contains: "ada" } }`, and `blogPosts: { some | none | every: { … } }` (EXISTS subqueries on SQL; on MongoDB the related ids are read first).
+- **Pagination.** `limit` and `offset`. Without `orderBy`, lists are sorted by primary key so pages are stable. Tables with a primary key also get a Relay-style `…Connection` with `first`/`after` and `last`/`before`, whose opaque cursors hold the order-by values plus the primary key.
+- **Batches.** `upsert…` updates the row with the input's primary key or creates it. `createMany…` and `deleteMany…` return a count and refuse more than `pagination.maxLimit` rows. Hooks run for each row, all in one transaction.
+- **Relations.** Each foreign key, composite ones included, gives a field on both sides: `BlogPost.author` and `Author.blogPosts`. Lookups are batched per request, so a list of 100 posts with their authors takes two queries.
+- **Keys.** Tables without a primary key are only listed and created: they get no by-key query, `update`, `delete`, `upsert`, `deleteMany` or connection. Tables whose columns are all key, like join tables, get no `update`.
+- **Views.** SQL views are read-only: listed, counted, filtered and followed, never written. Declare their keys with the `views` option to give them a by-key query, a connection and relations.
 - **Types.** `bigint` and `numeric` columns are `String` so they keep their precision. MySQL `tinyint(1)` columns are `Boolean`, `json` and `jsonb` are `JSON`, and dates are `DateTime` in ISO 8601.
-- **MongoDB.** A collection has no schema, so its fields are inferred from a sample of 100 documents. `_id` becomes `id: ID!` and every other field is optional, and a field whose values have different types is `JSON`. An ID field named `author_id` or `authorId` is read as a reference to the `author` or `authors` collection, and `category_id` to `categories`.
+- **MongoDB.** A collection has no schema, so its fields are inferred from a sample of 100 documents. `_id` becomes `id: ID!` and every other field is optional, and a field whose values have different types is `JSON`. An ID field named `author_id` or `authorId` is read as a reference to the `author` or `authors` collection, and `category_id` to `categories`; a DBRef to the collection it names; and an array of ids named `tag_ids` or `tagIds` as a list of `tags`.
 
 ### Options
 
@@ -115,6 +125,13 @@ InverseModelModule.forRoot({
     field: (column, table) => defaultNaming.field(column, table),
     plural: (type) => defaultNaming.plural(type),
   },
+  // Keys of SQL views, which have none of their own.
+  views: {
+    published_posts: {
+      primaryKey: ['id'],
+      foreignKeys: [{ columns: ['author_id'], table: 'authors', references: ['id'] }],
+    },
+  },
   // Anything else Apollo accepts, e.g. introspection, which is off when NODE_ENV=production.
   graphql: { introspection: true },
 });
@@ -129,10 +146,11 @@ InverseModelModule.forRoot({
 | `cache.ttlByTable` | `{}` | TTL per table or collection name. |
 | `cache.keyPrefix` | `inverse:` | Prefix of every Redis key. |
 | `pagination.defaultLimit` | `100` | Rows a list returns without `limit`. |
-| `pagination.maxLimit` | `1000` | Largest `limit` accepted; larger values are clamped. |
+| `pagination.maxLimit` | `1000` | Largest `limit` accepted; larger values are clamped. Also caps `createMany…` and `deleteMany…`. |
 | `naming.type` | singular PascalCase | Type name of a table or collection, given its name as listed: schema-qualified where the database has schemas (`public.blog_posts`). |
 | `naming.field` | camelCase | API name of a column or document field, given the column and its table. |
 | `naming.plural` | English plural | Plural of a type name, used for lists, counts and to-many relations. |
+| `views` | `{}` | Per view name: `primaryKey` and `foreignKeys` (column names). |
 | `graphql` | | Apollo options other than the schema. |
 | `hooks` | | Code run around the generated writes; see [Extending the API](#extending-the-api). |
 | `extend` | | SDL and resolvers merged into the generated schema. |
@@ -187,11 +205,11 @@ InverseModelModule.forRoot({
 | Option | Default | What it does |
 |---|---|---|
 | `include` / `exclude` | everything | Table or collection names (bare or schema-qualified, e.g. `public.users`) and `table.column` names; `*` matches any name. Hidden fields leave the types, inputs, filters and ordering, and hidden tables take their relations with them. |
-| `readOnly` | `false` | `true`, or the tables that get no create, update or delete. With nothing writable there is no `Mutation` type. |
+| `readOnly` | `false` | `true`, or the tables that get no create, update, delete, upsert or batch mutations. With nothing writable there is no `Mutation` type. |
 | `queryLimits.maxDepth` | `10` | Deepest nesting of fields a query may have. Introspection is not counted. |
 | `queryLimits.maxComplexity` | `50000` | Largest cost of a query: each field costs 1, times the rows of the lists it is in (their `limit`, or `pagination.defaultLimit`). |
-| `authorize` | allow all | `({ model, type, operation, context, args }) => boolean \| Promise<boolean>`, asked before every `list`, `count`, `byPk`, `create`, `update` and `delete`; relation fields ask for `list` of the model they point at. False answers a `FORBIDDEN` error. |
-| `scope` | none | `({ model, type, operation, context }) => Where \| null`, ANDed into every read, update and delete of the model, relations and their batches included, and part of the cache key. Properties are the API's (`tenantId`), not the columns'. It does not check what a create or update writes; use `authorize`, which sees `args`. |
+| `authorize` | allow all | `({ model, type, operation, context, args }) => boolean \| Promise<boolean>`, asked before every `list`, `count`, `byPk`, `create`, `update` and `delete`; relation fields and relation filters ask for `list` of the model they point at. A connection asks for `list`, an upsert for `create` and `update`, and `createMany`/`deleteMany` for `create`/`delete`. False answers a `FORBIDDEN` error. |
+| `scope` | none | `({ model, type, operation, context }) => Where \| null`, ANDed into every read, update and delete of the model, relations, relation filters, connections and `deleteMany` included, and part of the cache key. An upsert of a row outside the scope answers `FORBIDDEN`. Properties are the API's (`tenantId`), not the columns'. It does not check what a create or update writes; use `authorize`, which sees `args`. |
 
 `model` is the table or collection name (schema-qualified on PostgreSQL and SQL Server, e.g. `public.blog_posts`) and `type` its GraphQL name. Nest guards do not run on these resolvers, so `authorize` and `scope` are where access control goes; `context` is Apollo's, `{ req }` by default.
 
