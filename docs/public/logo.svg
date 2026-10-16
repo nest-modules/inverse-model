@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- A table turning into a graph: rows on the left, connected nodes on the right. -->
+  <rect x="4" y="12" width="22" height="40" rx="4" fill="#e0234e"/>
+  <rect x="8" y="20" width="14" height="3" rx="1.5" fill="#fff"/>
+  <rect x="8" y="30" width="14" height="3" rx="1.5" fill="#fff"/>
+  <rect x="8" y="40" width="14" height="3" rx="1.5" fill="#fff"/>
+  <path d="M30 32h8M44 18l-6 14 6 14" stroke="#e0234e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="46" cy="16" r="6" fill="#e0234e"/>
+  <circle cx="38" cy="32" r="5" fill="#e0234e"/>
+  <circle cx="46" cy="48" r="6" fill="#e0234e"/>
+  <circle cx="58" cy="32" r="4" fill="#e0234e"/>
+  <path d="M51 18l5 11M51 46l5-11" stroke="#e0234e" stroke-width="3" stroke-linecap="round"/>
+</svg>

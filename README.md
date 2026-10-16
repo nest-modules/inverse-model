@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://nest-modules.github.io/inverse-model/"><strong>Documentation</strong></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/nest-modules/inverse-model/actions/workflows/ci.yml"><img src="https://github.com/nest-modules/inverse-model/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/nest-modules/inverse-model" alt="License" /></a>
 </p>
@@ -211,7 +215,7 @@ InverseModelModule.forRoot({
 | `authorize` | allow all | `({ model, type, operation, context, args }) => boolean \| Promise<boolean>`, asked before every `list`, `count`, `byPk`, `create`, `update` and `delete`; relation fields and relation filters ask for `list` of the model they point at. A connection asks for `list`, an upsert for `create` and `update`, and `createMany`/`deleteMany` for `create`/`delete`. False answers a `FORBIDDEN` error. |
 | `scope` | none | `({ model, type, operation, context }) => Where \| null`, ANDed into every read, update and delete of the model, relations, relation filters, connections and `deleteMany` included, and part of the cache key. An upsert of a row outside the scope answers `FORBIDDEN`. Properties are the API's (`tenantId`), not the columns'. It does not check what a create or update writes; use `authorize`, which sees `args`. |
 
-`model` is the table or collection name (schema-qualified on PostgreSQL and SQL Server, e.g. `public.blog_posts`) and `type` its GraphQL name. Nest guards do not run on these resolvers, so `authorize` and `scope` are where access control goes; `context` is Apollo's, `{ req }` by default.
+`model` is the table or collection name (`blog_posts`; tables outside the default schema keep it, e.g. `audit.users`) and `type` its GraphQL name. Nest guards do not run on these resolvers, so `authorize` and `scope` are where access control goes; `context` is Apollo's, `{ req }` by default.
 
 Errors from the database never reach the client: it gets `Internal server error` with an `errorId`, and the original is logged with Nest's `Logger` under that id. Validation errors, and errors thrown on purpose (a `GraphQLError` or a Nest `HttpException`), go through as they are. Passwords of the database and Redis URLs are hidden in errors and logs.
 
@@ -229,7 +233,7 @@ inverse generate postgres://user:pass@localhost:5432/blog -o blog-api
 ```ts
 InverseModelModule.forRoot({
   url: process.env.DATABASE_URL!,
-  // Other names in the API; relations follow them (`Authors.article`, `Article.writer`).
+  // Other names in the API; relations follow them (`Author.articles`, `Article.writer`).
   rename: {
     tables: { blog_posts: 'Article' },
     fields: { 'authors.full_name': 'name', 'blog_posts.author_id': 'writerId' },
@@ -253,11 +257,11 @@ InverseModelModule.forRoot({
   // Your own SDL and resolvers, merged into the generated schema.
   extend: {
     typeDefs: `
-      extend type Authors { displayName: String! }
-      extend type Mutation { signUp(input: CreateAuthorsInput!): Authors! }
+      extend type Author { displayName: String! }
+      extend type Mutation { signUp(input: CreateAuthorInput!): Author! }
     `,
     resolvers: ({ connection, model, writes }) => ({
-      Authors: { displayName: (author) => `${author.name} <${author.email}>` },
+      Author: { displayName: (author) => `${author.name} <${author.email}>` },
       Mutation: {
         signUp: (_, { input }, context) => writes.create(model('authors'), input, context),
       },
@@ -271,7 +275,7 @@ InverseModelModule.forRoot({
 - **Transactions.** A write runs with its hooks in one transaction: an after-hook that throws rolls the write back. Queries through `transaction.connection` are part of it, and so are raw ones through `transaction.manager` (TypeORM's `EntityManager`, on SQL databases) or with `{ session: transaction.session }` (MongoDB). Cached results of a table are cleared once the transaction is over, never before it commits.
 - **MongoDB** needs a replica set or a sharded cluster for transactions; a single-node replica set is enough. On a standalone server the hooks still run, but `transaction.active` is false and each write applies on its own, so nothing rolls back.
 - **Extend** with `extend type` on generated types, `Query` and `Mutation`, using the generated types and inputs. `resolvers` may be a function of `{ connection, model, writes }`; `writes` runs the hooks too.
-- **Nest resolvers** in the same app work schema-first: declare their fields in `extend.typeDefs` and use `@Resolver('Authors')`, `@ResolveField()`, `@Query()` and `@Mutation()` with those names. They merge with the generated resolvers field by field, and win where both resolve a field. Code-first (`autoSchemaFile`, `@ObjectType()`) builds a schema of its own and cannot be combined with the generated one.
+- **Nest resolvers** in the same app work schema-first: declare their fields in `extend.typeDefs` and use `@Resolver('Author')`, `@ResolveField()`, `@Query()` and `@Mutation()` with those names. They merge with the generated resolvers field by field, and win where both resolve a field. Code-first (`autoSchemaFile`, `@ObjectType()`) builds a schema of its own and cannot be combined with the generated one.
 
 ### Development
 
@@ -315,7 +319,7 @@ If a port is taken, move it with `POSTGRES_PORT`, `MYSQL_PORT`, `MARIADB_PORT`, 
 
 The three packages are versioned together with [Changesets](https://github.com/changesets/changesets). Describe a user-facing change with `pnpm changeset` and commit the file it writes. On `main`, the release workflow keeps a "Version packages" PR open that bumps the versions and fills each `CHANGELOG.md`; merging it publishes the new versions to npm with provenance and tags them. Package versions not yet on npm, such as the first `0.1.0`, are published on the next push to `main`.
 
-Publishing needs an npm automation token in the `NPM_TOKEN` repository secret, and *Allow GitHub Actions to create and approve pull requests* turned on under Settings → Actions. Once the packages exist on npm, you can add `nest-modules/inverse-model` with workflow `release.yml` as a trusted publisher on each package's npm settings page and delete the token: `pnpm publish` tries trusted publishing (OIDC) first and only falls back to `NPM_TOKEN`.
+Publishing needs an npm token in the `NPM_TOKEN` secret of the repository or the organization, and *Allow GitHub Actions to create and approve pull requests* turned on under Settings → Actions. Once the packages exist on npm, you can add `nest-modules/inverse-model` with workflow `release.yml` as a trusted publisher on each package's npm settings page and delete the token: `pnpm publish` tries trusted publishing (OIDC) first and only falls back to `NPM_TOKEN`.
 
 ### License
 

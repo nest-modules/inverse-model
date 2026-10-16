@@ -2,7 +2,9 @@ packages:
   - 'packages/*'
   - 'apps/*'
   - 'samples/*'
+  - 'docs'
 allowBuilds:
   '@apollo/protobufjs': false
   '@parcel/watcher': false
+  esbuild: false
   unrs-resolver: false

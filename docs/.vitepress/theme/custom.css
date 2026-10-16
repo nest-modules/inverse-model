@@ -1,0 +1,15 @@
+/* NestJS red as the brand color, in both themes. */
+:root {
+  --vp-c-brand-1: #e0234e;
+  --vp-c-brand-2: #c81e45;
+  --vp-c-brand-3: #e0234e;
+  --vp-c-brand-soft: rgba(224, 35, 78, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #e0234e 30%, #f45d7c);
+}
+
+.dark {
+  --vp-c-brand-1: #f45d7c;
+  --vp-c-brand-2: #e0234e;
+  --vp-c-brand-3: #e0234e;
+}
