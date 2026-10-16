@@ -91,6 +91,17 @@ export function withScope(
       if (where && !(await visible(model, key, where))) return null;
       return connection.delete(model, key);
     },
+    ...(connection.transaction && {
+      // Writes run with hooks go through the transaction's connection, so it is scoped too.
+      transaction: (work) =>
+        (connection.transaction as NonNullable<typeof connection.transaction>)(
+          (transaction) =>
+            work({
+              ...transaction,
+              connection: withScope(transaction.connection, scope),
+            }),
+        ),
+    }),
     close: () => connection.close(),
   };
 }

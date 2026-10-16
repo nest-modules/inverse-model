@@ -9,6 +9,7 @@ import type {
 } from '../../adapters/database-adapter.interface';
 import { addRelations } from '../../adapters/relations';
 import { createSchema } from '../../graphql/create-schema';
+import { createWrites } from '../../hooks/writes';
 import type { InverseModelOptions } from '../../inverse-model.interfaces';
 import { openRestricted, secureGraphQL } from '../../security/secure-api';
 
@@ -167,7 +168,7 @@ export async function serve(
     logger,
     (scoped) => ({
       ...settings.graphql,
-      ...createSchema(scoped, pagination),
+      ...createSchema(scoped, pagination, createWrites(scoped, settings.hooks)),
     }),
   );
   const server = new ApolloServer({

@@ -1,3 +1,4 @@
+import type { EntityManager } from 'typeorm';
 import type { Naming } from '../utils/naming';
 
 /** GraphQL type a field is exposed as. */
@@ -112,7 +113,31 @@ export interface DatabaseConnection {
     model: ModelDefinition,
     key: DatabaseRecord,
   ): Promise<DatabaseRecord | null>;
+  /**
+   * Runs `work` in one transaction, committed when it resolves and rolled
+   * back when it throws. Called on a connection already in a transaction, it
+   * joins that one. A connection without it runs writes one by one.
+   */
+  transaction?<T>(
+    work: (transaction: DatabaseTransaction) => Promise<T>,
+  ): Promise<T>;
   close(): Promise<void>;
+}
+
+/** A transaction in progress; reads and writes through `connection` are part of it. */
+export interface DatabaseTransaction {
+  readonly connection: DatabaseConnection;
+  /**
+   * False when the database cannot run transactions (MongoDB without a
+   * replica set): each write then applies on its own and nothing rolls back.
+   */
+  readonly active: boolean;
+  /** TypeORM entity manager of the transaction, on SQL databases. */
+  readonly manager?: EntityManager;
+  /** MongoDB `ClientSession` of the transaction; pass it as `{ session }` to driver calls. */
+  readonly session?: unknown;
+  /** MongoDB `Db` the connection reads. */
+  readonly db?: unknown;
 }
 
 /** TLS settings; PEM contents, not file paths. */

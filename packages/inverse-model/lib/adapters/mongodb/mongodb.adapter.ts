@@ -1,7 +1,9 @@
 import type {
+  ClientSession,
   Db,
   Document,
   Filter,
+  MongoClient,
   MongoClientOptions,
   ObjectId,
 } from 'mongodb';
@@ -53,12 +55,34 @@ function tlsOptions({ ssl }: ConnectOptions): MongoClientOptions {
   };
 }
 
+/**
+ * Whether the server can run transactions: a replica set member or a mongos.
+ * A standalone server cannot.
+ */
+async function supportsTransactions(db: Db): Promise<boolean> {
+  try {
+    const hello = await db.admin().command({ hello: 1 });
+    return Boolean(hello.setName) || hello.msg === 'isdbgrid';
+  } catch {
+    return false;
+  }
+}
+
+interface MongoTarget {
+  mongo: Mongo;
+  client: MongoClient;
+  db: Db;
+  models: ModelDefinition[];
+  transactions: boolean;
+}
+
+/** Operations on the database, inside `session`'s transaction when given. */
 function connectionOver(
-  mongo: Mongo,
-  db: Db,
-  models: ModelDefinition[],
-  close: () => Promise<void>,
+  target: MongoTarget,
+  session?: ClientSession,
 ): DatabaseConnection {
+  const { mongo, client, db, models } = target;
+  const options = { session };
   const { ObjectId } = mongo;
   const toId = (value: unknown) =>
     typeof value === 'string' && ObjectId.isValid(value) && value.length === 24
@@ -96,11 +120,11 @@ function connectionOver(
   const byKey = (key: DatabaseRecord) =>
     ({ _id: toId(key.id) }) as Filter<Document>;
   const findOne = async (model: ModelDefinition, key: DatabaseRecord) => {
-    const document = await collection(model).findOne(byKey(key));
+    const document = await collection(model).findOne(byKey(key), options);
     return document && toRecord(model, document);
   };
 
-  return {
+  const connection: DatabaseConnection = {
     models,
     async find(model, { where, orderBy, limit, offset }) {
       const sort = (orderBy ?? []).flatMap((entry) =>
@@ -111,7 +135,7 @@ function connectionOver(
         ]),
       );
       let cursor = collection(model)
-        .find(mongoFilter(where, model, toId))
+        .find(mongoFilter(where, model, toId), options)
         .sort(sort);
       if (offset) cursor = cursor.skip(offset);
       if (limit !== undefined && limit !== null) cursor = cursor.limit(limit);
@@ -119,11 +143,15 @@ function connectionOver(
       return documents.map((document) => toRecord(model, document));
     },
     count: (model, where) =>
-      collection(model).countDocuments(mongoFilter(where, model, toId)),
+      collection(model).countDocuments(
+        mongoFilter(where, model, toId),
+        options,
+      ),
     findOne,
     async insert(model, input) {
       const { insertedId } = await collection(model).insertOne(
         toDocument(model, input),
+        options,
       );
       return (await findOne(model, { id: insertedId.toHexString() })) ?? input;
     },
@@ -131,16 +159,55 @@ function connectionOver(
       const changes = toDocument(model, input);
       delete changes._id;
       if (Object.keys(changes).length > 0) {
-        await collection(model).updateOne(byKey(key), { $set: changes });
+        await collection(model).updateOne(
+          byKey(key),
+          { $set: changes },
+          options,
+        );
       }
       return findOne(model, key);
     },
     async delete(model, key) {
-      const document = await collection(model).findOneAndDelete(byKey(key));
+      const document = await collection(model).findOneAndDelete(
+        byKey(key),
+        options,
+      );
       return document && toRecord(model, document);
     },
-    close,
+    async transaction(work) {
+      if (session?.inTransaction()) {
+        return work({ connection, active: true, session, db });
+      }
+      if (!target.transactions) {
+        return work({ connection, active: false, db });
+      }
+      // Not withTransaction(): it retries `work`, which would run hooks twice.
+      const transactionSession = client.startSession();
+      try {
+        transactionSession.startTransaction();
+        const result = await work({
+          connection: connectionOver(target, transactionSession),
+          active: true,
+          session: transactionSession,
+          db,
+        });
+        await transactionSession.commitTransaction();
+        return result;
+      } catch (error) {
+        if (transactionSession.inTransaction()) {
+          await transactionSession.abortTransaction();
+        }
+        throw error;
+      } finally {
+        await transactionSession.endSession();
+      }
+    },
+    // Only the connection the adapter opened owns the client.
+    close: async () => {
+      if (!session) await client.close();
+    },
   };
+  return connection;
 }
 
 /** MongoDB through its native driver; needs the `mongodb` package. */
@@ -162,6 +229,12 @@ export const mongodbAdapter: DatabaseAdapter = {
     });
     addRelations(inferForeignKeys(models));
 
-    return connectionOver(mongo, db, models, () => client.close());
+    return connectionOver({
+      mongo,
+      client,
+      db,
+      models,
+      transactions: await supportsTransactions(db),
+    });
   },
 };

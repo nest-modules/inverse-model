@@ -1,4 +1,4 @@
-// MongoDB version of schema.sql; compose.yaml runs it with mongosh on first start.
+// MongoDB version of schema.sql; the compose.yaml healthcheck runs it with mongosh once the replica set is up.
 // Collections have no schema, so the adapter infers their fields from these documents.
 const blog = db.getSiblingDB('inverse_blog');
 

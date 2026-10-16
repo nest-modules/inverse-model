@@ -6,6 +6,7 @@ import type {
   RelationDefinition,
   Where,
 } from '../adapters/database-adapter.interface';
+import { createWrites, type Writes } from '../hooks/writes';
 import { operationNames } from './operation-names';
 import { relationLoader } from './relation-loader';
 import { GraphQLDateTime, GraphQLJSON } from './scalars';
@@ -33,6 +34,7 @@ const contextOf = (context: unknown) =>
 export function createResolvers(
   connection: DatabaseConnection,
   pagination: PaginationSettings,
+  writes: Writes = createWrites(connection),
 ) {
   const models = new Map(connection.models.map((model) => [model.name, model]));
 
@@ -100,23 +102,24 @@ export function createResolvers(
       connection.find(model, page(model, args as ListArgs));
     Query[names.count] = (_parent, args) =>
       connection.count(model, args.where as Where | undefined);
-    Mutation[names.create] = (_parent, args) =>
-      connection.insert(model, args.input as DatabaseRecord);
+    Mutation[names.create] = (_parent, args, context) =>
+      writes.create(model, args.input as DatabaseRecord, context);
 
     if (model.primaryKey.length > 0) {
       Query[names.byPk] = (_parent, args) =>
         connection.findOne(model, keyOf(model, args));
       // A table whose columns are all key, like a join table, has nothing to update.
       if (updatableFields(model).length > 0) {
-        Mutation[names.update] = (_parent, args) =>
-          connection.update(
+        Mutation[names.update] = (_parent, args, context) =>
+          writes.update(
             model,
             keyOf(model, args),
             args.input as DatabaseRecord,
+            context,
           );
       }
-      Mutation[names.delete] = (_parent, args) =>
-        connection.delete(model, keyOf(model, args));
+      Mutation[names.delete] = (_parent, args, context) =>
+        writes.delete(model, keyOf(model, args), context);
     }
 
     types[model.name] = Object.fromEntries(

@@ -92,17 +92,25 @@ services:
 
   mongodb:
     image: mongo:8.0
+    # A single-node replica set, so writes and their hooks run in transactions.
+    # From the host, connect with ?directConnection=true: the member is named mongodb:27017.
+    command: ['--replSet', 'rs0']
     ports: ['${MONGODB_PORT:-27017}:27017']
     volumes:
-      - ./samples/blog/seed.mongodb.js:/docker-entrypoint-initdb.d/seed.js:ro
+      - ./samples/blog/seed.mongodb.js:/seed.js:ro
     healthcheck:
-      # Waits for the seed, since the init scripts run on a server that already answers pings.
+      # Initiates the replica set, then seeds it once it is primary. The init
+      # scripts of the image would run before there is a primary to write to.
       test:
         - CMD
         - mongosh
         - --quiet
         - --eval
-        - "quit(db.getSiblingDB('inverse_blog').blog_posts.countDocuments() > 0 ? 0 : 1)"
+        - >-
+          try { rs.status() } catch { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongodb:27017' }] }) }
+          if (!db.hello().isWritablePrimary) quit(1);
+          if (db.getSiblingDB('inverse_blog').blog_posts.countDocuments() === 0) load('/seed.js');
+          quit(db.getSiblingDB('inverse_blog').blog_posts.countDocuments() > 0 ? 0 : 1)
       interval: 2s
       retries: 30
 

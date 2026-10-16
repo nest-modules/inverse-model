@@ -54,7 +54,7 @@ jobs:
           MYSQL_URL: mysql://inverse:inverse@localhost:3306/inverse_blog
           MARIADB_URL: mariadb://inverse:inverse@localhost:3307/inverse_blog
           SQLSERVER_URL: mssql://sa:Inverse_Passw0rd@localhost:1433/inverse_blog?trustServerCertificate=true
-          MONGODB_URL: mongodb://localhost:27017/inverse_blog
+          MONGODB_URL: mongodb://localhost:27017/inverse_blog?directConnection=true
           REDIS_URL: redis://localhost:6379
       - name: Database logs
         if: failure()

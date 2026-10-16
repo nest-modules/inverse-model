@@ -1,5 +1,6 @@
 import type { ApolloDriverConfig } from '@nestjs/apollo';
 import type { DatabaseConnection } from '../adapters/database-adapter.interface';
+import type { Writes } from '../hooks/writes';
 import { createResolvers, type PaginationSettings } from './resolvers';
 import { createTypeDefs } from './type-defs';
 
@@ -16,7 +17,8 @@ export interface GraphQLSchemaParts {
 export const createSchema = (
   connection: DatabaseConnection,
   pagination: PaginationSettings,
+  writes?: Writes,
 ): GraphQLSchemaParts => ({
   typeDefs: createTypeDefs(connection.models),
-  resolvers: createResolvers(connection, pagination),
+  resolvers: createResolvers(connection, pagination, writes),
 });

@@ -7,7 +7,13 @@ import {
   INVERSE_MODEL_OPTIONS,
   type InverseModelAsyncOptions,
 } from './database/database.module-definition';
+import {
+  extendSchema,
+  modelLookup,
+  schemaOptions,
+} from './extend/extend-schema';
 import { createSchema } from './graphql/create-schema';
+import { createWrites } from './hooks/writes';
 import { INVERSE_CONNECTION } from './inverse-model.constants';
 import type { InverseModelOptions } from './inverse-model.interfaces';
 import { secureGraphQL } from './security/secure-api';
@@ -46,16 +52,37 @@ export class InverseModelModule {
               defaultLimit: options.pagination?.defaultLimit ?? 100,
               maxLimit: options.pagination?.maxLimit ?? 1000,
             };
-            return secureGraphQL(
+            const { typeDefs, resolvers, ...config } = secureGraphQL(
               connection,
               options,
               pagination,
               new Logger('InverseModel'),
-              (scoped) => ({
-                ...options.graphql,
-                ...createSchema(scoped, pagination),
-              }),
+              (scoped) => {
+                // Writes go through the scoped connection, so hooks never reach another tenant's rows.
+                const writes = createWrites(scoped, options.hooks);
+                return {
+                  ...options.graphql,
+                  ...extendSchema(
+                    createSchema(scoped, pagination, writes),
+                    options.extend,
+                    { connection: scoped, model: modelLookup(scoped), writes },
+                  ),
+                };
+              },
             );
+            // Secured first, then merged with any code-first resolvers Nest discovers.
+            return {
+              ...config,
+              ...schemaOptions(
+                {
+                  typeDefs: typeDefs as string,
+                  resolvers: resolvers as Parameters<
+                    typeof schemaOptions
+                  >[0]['resolvers'],
+                },
+                options.graphql?.transformResolvers,
+              ),
+            };
           },
         }),
       ],

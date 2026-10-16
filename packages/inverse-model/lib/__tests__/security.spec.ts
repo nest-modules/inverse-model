@@ -410,6 +410,35 @@ describe('security', () => {
       ).resolves.toEqual({ data: { updateAuthors: { fullName: 'Bee' } } });
     });
 
+    it('scopes writes that hooks run inside a transaction', async () => {
+      await seed();
+      // Hooks make writes go through the transaction's own connection.
+      connection.transaction = (work) => work({ connection, active: true });
+      const beforeUpdate = jest.fn(({ input }) => input);
+      api = await serve(connection, {
+        scope,
+        hooks: { '*': { beforeUpdate } },
+      });
+      await expect(
+        api.run(
+          'mutation { updateAuthors(id: 2, input: { fullName: "X" }) { id } }',
+          as(1),
+        ),
+      ).resolves.toEqual({ data: { updateAuthors: null } });
+      expect(connection.update).not.toHaveBeenCalled();
+
+      // Within the tenant, the hook still runs in the transaction.
+      await api.run(
+        'mutation { updateAuthors(id: 1, input: { fullName: "Ada L." }) { id } }',
+        as(1),
+      );
+      expect(beforeUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transaction: expect.objectContaining({ active: true }),
+        }),
+      );
+    });
+
     it('keeps tenants apart in the cache', async () => {
       await seed();
       const entries = new Map<string, string>();

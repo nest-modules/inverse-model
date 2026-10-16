@@ -134,6 +134,9 @@ InverseModelModule.forRoot({
 | `naming.field` | camelCase | API name of a column or document field, given the column and its table. |
 | `naming.plural` | English plural | Plural of a type name, used for lists, counts and to-many relations. |
 | `graphql` | | Apollo options other than the schema. |
+| `hooks` | | Code run around the generated writes; see [Extending the API](#extending-the-api). |
+| `extend` | | SDL and resolvers merged into the generated schema. |
+| `rename` | | Other API names for tables and columns. |
 
 `defaultNaming` and the `singularize` and `pluralize` it uses are exported, so an override can build on them.
 
@@ -203,6 +206,55 @@ npm install -g @nestjs-modules/inverse
 inverse generate postgres://user:pass@localhost:5432/blog -o blog-api
 ```
 
+### Extending the API
+
+```ts
+InverseModelModule.forRoot({
+  url: process.env.DATABASE_URL!,
+  // Other names in the API; relations follow them (`Authors.article`, `Article.writer`).
+  rename: {
+    tables: { blog_posts: 'Article' },
+    fields: { 'authors.full_name': 'name', 'blog_posts.author_id': 'writerId' },
+  },
+  // Per table name, or `*` for all: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDelete, afterDelete.
+  hooks: {
+    blog_posts: {
+      beforeCreate: ({ input, context }) => {
+        if (!context.req.user) throw new GraphQLError('Sign in to post');
+        return { ...input, slug: slugify(input.title) }; // written instead of the input
+      },
+    },
+    '*': {
+      // Part of the update's transaction: if it fails, the update rolls back.
+      afterUpdate: ({ model, key, transaction }) =>
+        transaction.manager?.query('INSERT INTO audit_log (message) VALUES ($1)', [
+          `${model.source} ${JSON.stringify(key)} updated`,
+        ]),
+    },
+  },
+  // Your own SDL and resolvers, merged into the generated schema.
+  extend: {
+    typeDefs: `
+      extend type Authors { displayName: String! }
+      extend type Mutation { signUp(input: CreateAuthorsInput!): Authors! }
+    `,
+    resolvers: ({ connection, model, writes }) => ({
+      Authors: { displayName: (author) => `${author.name} <${author.email}>` },
+      Mutation: {
+        signUp: (_, { input }, context) => writes.create(model('authors'), input, context),
+      },
+    }),
+  },
+  graphql: { context: ({ req }) => ({ req }) },
+});
+```
+
+- **Hooks** get `{ model, input, key, record, context, transaction }`. Records and inputs use the API's field names. A before-hook may return a new input; throwing aborts the write with that error. For each step the `*` hooks run first, then the table's. Updates and deletes of a missing record run no hooks.
+- **Transactions.** A write runs with its hooks in one transaction: an after-hook that throws rolls the write back. Queries through `transaction.connection` are part of it, and so are raw ones through `transaction.manager` (TypeORM's `EntityManager`, on SQL databases) or with `{ session: transaction.session }` (MongoDB). Cached results of a table are cleared once the transaction is over, never before it commits.
+- **MongoDB** needs a replica set or a sharded cluster for transactions; a single-node replica set is enough. On a standalone server the hooks still run, but `transaction.active` is false and each write applies on its own, so nothing rolls back.
+- **Extend** with `extend type` on generated types, `Query` and `Mutation`, using the generated types and inputs. `resolvers` may be a function of `{ connection, model, writes }`; `writes` runs the hooks too.
+- **Nest resolvers** in the same app work schema-first: declare their fields in `extend.typeDefs` and use `@Resolver('Authors')`, `@ResolveField()`, `@Query()` and `@Mutation()` with those names. They merge with the generated resolvers field by field, and win where both resolve a field. Code-first (`autoSchemaFile`, `@ObjectType()`) builds a schema of its own and cannot be combined with the generated one.
+
 ### Development
 
 ```sh
@@ -222,7 +274,7 @@ POSTGRES_URL=postgres://inverse:inverse@localhost:5432/inverse_blog \
 MYSQL_URL=mysql://inverse:inverse@localhost:3306/inverse_blog \
 MARIADB_URL=mariadb://inverse:inverse@localhost:3307/inverse_blog \
 SQLSERVER_URL='mssql://sa:Inverse_Passw0rd@localhost:1433/inverse_blog?trustServerCertificate=true' \
-MONGODB_URL=mongodb://localhost:27017/inverse_blog \
+MONGODB_URL='mongodb://localhost:27017/inverse_blog?directConnection=true' \
 REDIS_URL=redis://localhost:6379 \
 pnpm --filter @nestjs-modules/inverse-model test:integration
 

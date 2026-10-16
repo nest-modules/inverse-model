@@ -12,6 +12,21 @@ export type {
   Where,
 } from './adapters/database-adapter.interface';
 export type * from './security/security.interfaces';
+
+import type { InverseExtendOptions } from './extend/extend-schema';
+import type { InverseHooks } from './hooks/write-hooks.interfaces';
+import type { InverseRenameOptions } from './rename/with-renames';
+
+export type {
+  DatabaseConnection,
+  DatabaseRecord,
+  DatabaseTransaction,
+  ModelDefinition,
+} from './adapters/database-adapter.interface';
+export type { InverseApi, InverseExtendOptions } from './extend/extend-schema';
+export type * from './hooks/write-hooks.interfaces';
+export type { Writes } from './hooks/writes';
+export type { InverseRenameOptions } from './rename/with-renames';
 export type { SslOptions };
 
 export interface InverseCacheOptions {
@@ -68,4 +83,14 @@ export interface InverseModelOptions {
   authorize?: InverseAuthorize;
   /** Extra filter ANDed into every read, update and delete of a model, e.g. per tenant. */
   scope?: InverseScope;
+  /**
+   * Code run around the generated mutations, per table or collection name and
+   * `*` for all: `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`,
+   * `beforeDelete` and `afterDelete`. A write and its hooks share a transaction.
+   */
+  hooks?: InverseHooks;
+  /** Your own SDL and resolvers, merged into the generated schema. */
+  extend?: InverseExtendOptions;
+  /** Other names in the API for tables (`{ blog_posts: 'Article' }`) and columns (`{ 'authors.full_name': 'name' }`). */
+  rename?: InverseRenameOptions;
 }

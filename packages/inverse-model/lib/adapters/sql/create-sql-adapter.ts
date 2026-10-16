@@ -1,6 +1,7 @@
 import {
   DataSource,
   type DataSourceOptions,
+  type EntityManager,
   type EntityMetadata,
   type FindOptionsWhere,
   type Table,
@@ -171,13 +172,15 @@ function entityNamesOf(tables: Table[]): Map<string, string> {
   return names;
 }
 
+/** Operations through `manager`: the data source's own, or one bound to a transaction. */
 function connectionOver(
   dataSource: DataSource,
   models: ModelDefinition[],
   entityNames: Map<string, string>,
+  manager: EntityManager = dataSource.manager,
 ): DatabaseConnection {
   const repository = (model: ModelDefinition) =>
-    dataSource.getRepository<DatabaseRecord>(
+    manager.getRepository<DatabaseRecord>(
       entityNames.get(model.source) as string,
     );
   // Keys come from the API already matched against the primary key columns.
@@ -198,7 +201,7 @@ function connectionOver(
     return record && normalize(model, record);
   };
 
-  return {
+  const connection: DatabaseConnection = {
     models,
     async find(model, { where, orderBy, limit, offset }) {
       const { sql, parameters } = whereSql(where, 't');
@@ -250,8 +253,29 @@ function connectionOver(
       if (record) await repository(model).delete(byKey(key));
       return record;
     },
-    close: () => dataSource.destroy(),
+    transaction(work) {
+      if (manager.queryRunner?.isTransactionActive) {
+        return work({ connection, active: true, manager });
+      }
+      return dataSource.transaction((transactional) =>
+        work({
+          connection: connectionOver(
+            dataSource,
+            models,
+            entityNames,
+            transactional,
+          ),
+          active: true,
+          manager: transactional,
+        }),
+      );
+    },
+    // Only the connection the adapter opened owns the data source.
+    close: async () => {
+      if (manager === dataSource.manager) await dataSource.destroy();
+    },
   };
+  return connection;
 }
 
 /**

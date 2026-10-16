@@ -13,6 +13,7 @@ import { createRedisStore } from '../cache/redis-store';
 import { assertValidNames } from '../graphql/validate-names';
 import { INVERSE_CONNECTION } from '../inverse-model.constants';
 import type { InverseModelOptions } from '../inverse-model.interfaces';
+import { withRenames } from '../rename/with-renames';
 import { openRestricted, redactorFor } from '../security/secure-api';
 import { resolveNaming } from '../utils/naming';
 import {
@@ -24,12 +25,13 @@ import {
 const logger = new Logger('InverseModel');
 
 async function connect(options: InverseModelOptions) {
-  const connection = await openRestricted(options, () =>
-    findAdapter(options.url).connect(options.url, {
+  const connection = await openRestricted(options, async () => {
+    const opened = await findAdapter(options.url).connect(options.url, {
       ssl: options.ssl,
       naming: resolveNaming(options.naming),
-    }),
-  );
+    });
+    return options.rename ? withRenames(opened, options.rename) : opened;
+  });
   // Only the exposed models need unique names; a hidden table cannot collide.
   try {
     assertValidNames(connection.models);

@@ -119,6 +119,16 @@ export function restrictConnection(
     update: async (model, key, input) =>
       connection.update(writable(model), key, input),
     delete: async (model, key) => connection.delete(writable(model), key),
+    ...(connection.transaction && {
+      transaction: (work) =>
+        (connection.transaction as NonNullable<typeof connection.transaction>)(
+          (transaction) =>
+            work({
+              ...transaction,
+              connection: restrictConnection(transaction.connection, rules),
+            }),
+        ),
+    }),
     close: () => connection.close(),
   };
 }
