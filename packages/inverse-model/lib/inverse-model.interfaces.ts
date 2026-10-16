@@ -5,6 +5,7 @@ import type {
   InverseQueryLimits,
   InverseScope,
 } from './security/security.interfaces';
+import type { Naming } from './utils/naming';
 
 export type {
   FieldFilter,
@@ -31,6 +32,12 @@ export interface InversePaginationOptions {
   maxLimit?: number;
 }
 
+/**
+ * Overrides of how table and column names become GraphQL names; each one
+ * left out keeps the default of `defaultNaming`.
+ */
+export type InverseNamingOptions = Partial<Naming>;
+
 export interface InverseModelOptions {
   /**
    * Connection string of the database to expose; its protocol picks the
@@ -42,6 +49,8 @@ export interface InverseModelOptions {
   /** Caches query results in Redis; every mutation clears its table's results. */
   cache?: InverseCacheOptions;
   pagination?: InversePaginationOptions;
+  /** How tables and columns are named in the API; by default `blog_posts.created_at` is `BlogPost.createdAt`. */
+  naming?: InverseNamingOptions;
   /** Overrides for the Apollo server; the schema itself always comes from the database. */
   graphql?: Omit<ApolloDriverConfig, 'driver' | 'typeDefs' | 'resolvers'>;
   /**

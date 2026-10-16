@@ -1,3 +1,5 @@
+import type { Naming } from '../utils/naming';
+
 /** GraphQL type a field is exposed as. */
 export type FieldType =
   | 'ID'
@@ -38,8 +40,10 @@ export interface RelationDefinition {
 
 /** A table or collection of the database. */
 export interface ModelDefinition {
-  /** GraphQL type name, e.g. `BlogPosts`. */
+  /** GraphQL type name, e.g. `BlogPost`. */
   name: string;
+  /** Plural of `name` for lists, e.g. `BlogPosts`; the English plural of `name` when left out. */
+  plural?: string;
   /** Table or collection name in the database, e.g. `blog_posts`. */
   source: string;
   fields: FieldDefinition[];
@@ -123,6 +127,8 @@ export interface SslOptions {
 export interface ConnectOptions {
   /** True turns TLS on with the defaults of the driver. */
   ssl?: boolean | SslOptions;
+  /** How tables and columns are named in the API; the defaults of `defaultNaming` when left out. */
+  naming?: Naming;
 }
 
 /** Knows how to read and write one kind of database. */

@@ -32,7 +32,7 @@ const field = (
 
 function blogModels() {
   const authors: ModelDefinition = {
-    name: 'Authors',
+    name: 'Author',
     source: 'authors',
     fields: [
       field('id', 'Int', { hasDefault: true }),
@@ -43,7 +43,7 @@ function blogModels() {
     relations: [],
   };
   const posts: ModelDefinition = {
-    name: 'BlogPosts',
+    name: 'BlogPost',
     source: 'blog_posts',
     fields: [
       field('id', 'Int', { hasDefault: true }),
@@ -55,7 +55,7 @@ function blogModels() {
     relations: [],
   };
   const logs: ModelDefinition = {
-    name: 'Logs',
+    name: 'Log',
     source: 'logs',
     fields: [field('message', 'String')],
     primaryKey: [],
@@ -186,21 +186,21 @@ describe('generated GraphQL API', () => {
 
   async function seed() {
     await run(`mutation {
-      ada: createAuthors(input: { fullName: "Ada" }) { id }
-      alan: createAuthors(input: { fullName: "Alan" }) { id }
-      a: createBlogPosts(input: { authorId: 1, title: "Engines" }) { id }
-      b: createBlogPosts(input: { authorId: 1, title: "Notes" }) { id }
-      c: createBlogPosts(input: { authorId: 2, title: "Machines" }) { id }
+      ada: createAuthor(input: { fullName: "Ada" }) { id }
+      alan: createAuthor(input: { fullName: "Alan" }) { id }
+      a: createBlogPost(input: { authorId: 1, title: "Engines" }) { id }
+      b: createBlogPost(input: { authorId: 1, title: "Notes" }) { id }
+      c: createBlogPost(input: { authorId: 2, title: "Machines" }) { id }
     }`);
   }
 
   it('creates, reads, updates and deletes by primary key', async () => {
     await expect(
       run(
-        'mutation { createAuthors(input: { fullName: "Ada" }) { id fullName createdAt } }',
+        'mutation { createAuthor(input: { fullName: "Ada" }) { id fullName createdAt } }',
       ),
     ).resolves.toEqual({
-      createAuthors: {
+      createAuthor: {
         id: 1,
         fullName: 'Ada',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -208,17 +208,17 @@ describe('generated GraphQL API', () => {
     });
     await expect(
       run(
-        'mutation { updateAuthors(id: 1, input: { fullName: "Ada L." }) { fullName } }',
+        'mutation { updateAuthor(id: 1, input: { fullName: "Ada L." }) { fullName } }',
       ),
-    ).resolves.toEqual({ updateAuthors: { fullName: 'Ada L.' } });
-    await expect(run('{ authorsByPk(id: 1) { fullName } }')).resolves.toEqual({
-      authorsByPk: { fullName: 'Ada L.' },
+    ).resolves.toEqual({ updateAuthor: { fullName: 'Ada L.' } });
+    await expect(run('{ author(id: 1) { fullName } }')).resolves.toEqual({
+      author: { fullName: 'Ada L.' },
     });
     await expect(
-      run('mutation { deleteAuthors(id: 1) { id } }'),
-    ).resolves.toEqual({ deleteAuthors: { id: 1 } });
-    await expect(run('{ authorsByPk(id: 1) { id } }')).resolves.toEqual({
-      authorsByPk: null,
+      run('mutation { deleteAuthor(id: 1) { id } }'),
+    ).resolves.toEqual({ deleteAuthor: { id: 1 } });
+    await expect(run('{ author(id: 1) { id } }')).resolves.toEqual({
+      author: null,
     });
   });
 
@@ -281,8 +281,28 @@ describe('generated GraphQL API', () => {
     expect(names('query')).toEqual(
       expect.arrayContaining(['logs', 'logsCount']),
     );
-    expect(names('query')).not.toContain('logsByPk');
-    expect(names('mutation')).toContain('createLogs');
-    expect(names('mutation')).not.toContain('updateLogs');
+    expect(names('query')).not.toContain('log');
+    expect(names('mutation')).toContain('createLog');
+    expect(names('mutation')).not.toContain('updateLog');
+  });
+});
+
+describe('a table whose columns are all key', () => {
+  it('gets no update mutation in the schema or the resolvers', () => {
+    const postTags: ModelDefinition = {
+      name: 'PostTag',
+      source: 'post_tags',
+      fields: [field('postId', 'Int'), field('tagId', 'Int')],
+      primaryKey: ['postId', 'tagId'],
+      relations: [],
+    };
+    const { typeDefs, resolvers } = createSchema(memoryConnection([postTags]), {
+      defaultLimit: 2,
+      maxLimit: 3,
+    });
+    const mutation = (resolvers as Record<string, Record<string, unknown>>)
+      .Mutation;
+    expect(typeDefs).not.toContain('updatePostTag');
+    expect(Object.keys(mutation)).toEqual(['createPostTag', 'deletePostTag']);
   });
 });

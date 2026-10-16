@@ -18,8 +18,8 @@ const model = (name: string, properties: string[]): ModelDefinition => ({
 
 describe('addRelations', () => {
   it('adds both ends of a foreign key', () => {
-    const authors = model('Authors', ['id']);
-    const posts = model('BlogPosts', ['id', 'authorId']);
+    const authors = model('Author', ['id']);
+    const posts = model('BlogPost', ['id', 'authorId']);
     addRelations([
       { source: posts, field: 'authorId', target: authors, reference: 'id' },
     ]);
@@ -28,7 +28,7 @@ describe('addRelations', () => {
       {
         property: 'author',
         kind: 'one',
-        target: 'Authors',
+        target: 'Author',
         field: 'authorId',
         reference: 'id',
       },
@@ -37,16 +37,25 @@ describe('addRelations', () => {
       {
         property: 'blogPosts',
         kind: 'many',
-        target: 'BlogPosts',
+        target: 'BlogPost',
         field: 'id',
         reference: 'authorId',
       },
     ]);
   });
 
+  it('names the way back with the plural the model gives', () => {
+    const people = model('Person', ['id']);
+    const posts = { ...model('Post', ['id', 'authorId']), plural: 'Writings' };
+    addRelations([
+      { source: posts, field: 'authorId', target: people, reference: 'id' },
+    ]);
+    expect(people.relations[0].property).toBe('writings');
+  });
+
   it('tells apart two keys to the same table', () => {
-    const users = model('Users', ['id']);
-    const messages = model('Messages', ['id', 'senderId', 'recipientId']);
+    const users = model('User', ['id']);
+    const messages = model('Message', ['id', 'senderId', 'recipientId']);
     addRelations([
       { source: messages, field: 'senderId', target: users, reference: 'id' },
       {
@@ -68,12 +77,12 @@ describe('addRelations', () => {
   });
 
   it('names a key without an id suffix after its target, avoiding taken names', () => {
-    const users = model('Users', ['id']);
-    const tasks = model('Tasks', ['id', 'owner', 'users']);
+    const users = model('User', ['id']);
+    const tasks = model('Task', ['id', 'owner', 'user']);
     addRelations([
       { source: tasks, field: 'owner', target: users, reference: 'id' },
     ]);
 
-    expect(tasks.relations[0].property).toBe('users2');
+    expect(tasks.relations[0].property).toBe('user2');
   });
 });

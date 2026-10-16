@@ -40,32 +40,35 @@ For a database with `authors` and `blog_posts`, where `blog_posts.author_id` ref
 
 ```graphql
 type Query {
-  authors(where: AuthorsWhere, orderBy: [AuthorsOrderBy!], limit: Int, offset: Int): [Authors!]!
-  authorsCount(where: AuthorsWhere): Int!
-  authorsByPk(id: Int!): Authors
-  blogPosts(where: BlogPostsWhere, orderBy: [BlogPostsOrderBy!], limit: Int, offset: Int): [BlogPosts!]!
-  # …
+  authors(where: AuthorWhere, orderBy: [AuthorOrderBy!], limit: Int, offset: Int): [Author!]!
+  authorsCount(where: AuthorWhere): Int!
+  author(id: Int!): Author
+  blogPosts(where: BlogPostWhere, orderBy: [BlogPostOrderBy!], limit: Int, offset: Int): [BlogPost!]!
+  blogPostsCount(where: BlogPostWhere): Int!
+  blogPost(id: String!): BlogPost
 }
 
 type Mutation {
-  createAuthors(input: CreateAuthorsInput!): Authors!
-  updateAuthors(id: Int!, input: UpdateAuthorsInput!): Authors
-  deleteAuthors(id: Int!): Authors
-  # … the same for BlogPosts
+  createAuthor(input: CreateAuthorInput!): Author!
+  updateAuthor(id: Int!, input: UpdateAuthorInput!): Author
+  deleteAuthor(id: Int!): Author
+  createBlogPost(input: CreateBlogPostInput!): BlogPost!
+  updateBlogPost(id: String!, input: UpdateBlogPostInput!): BlogPost
+  deleteBlogPost(id: String!): BlogPost
 }
 
-type Authors {
+type Author {
   id: Int!
   fullName: String!
   email: String!
   createdAt: DateTime!
-  blogPosts(where: BlogPostsWhere, orderBy: [BlogPostsOrderBy!], limit: Int, offset: Int): [BlogPosts!]!
+  blogPosts(where: BlogPostWhere, orderBy: [BlogPostOrderBy!], limit: Int, offset: Int): [BlogPost!]!
 }
 
-type BlogPosts {
+type BlogPost {
   id: String!
   authorId: Int!
-  author: Authors
+  author: Author
   # …
 }
 ```
@@ -83,13 +86,14 @@ type BlogPosts {
 }
 ```
 
-- **Names.** Types are the table names in PascalCase (`blog_posts` → `BlogPosts`), and fields are the column names in camelCase (`created_at` → `createdAt`).
+- **Names.** Types are the table names in singular PascalCase (`blog_posts` → `BlogPost`, `people` → `Person`), and fields are the column names in camelCase (`created_at` → `createdAt`). Lists and counts take the plural (`blogPosts`, `blogPostsCount`), the by-key query and the mutations the singular (`blogPost(id:)`, `createBlogPost`). A word with the same singular and plural, like `news`, gets `newsByPk` for its by-key query. The schema of a table is left out of its name; the `naming` option changes any of this.
+- **Name checks.** If two tables end up with the same name (`public.users` and `audit.users` are both `User`), a name clashes with one the API already uses (`Query`, `Int`, `DateTime`, `StringFilter`…), or a name is not valid in GraphQL (`1st_quarter`), the app fails to start with an error that lists the tables involved.
 - **Filters.** Each field takes `eq`, `ne` and `isNull`. Numbers and dates add `gt`, `gte`, `lt`, `lte` and `in`, and strings add `in` and a case-insensitive `contains`. Conditions combine with `AND`, `OR` and `NOT`.
 - **Pagination.** `limit` and `offset`. Without `orderBy`, lists are sorted by primary key so pages are stable.
 - **Relations.** Each single-column foreign key gives a field on both sides: `BlogPosts.author` and `Authors.blogPosts`. Lookups are batched per request, so a list of 100 posts with their authors takes two queries.
-- **Keys.** Tables without a primary key are only listed and created: they get no `ByPk`, `update` or `delete`.
+- **Keys.** Tables without a primary key are only listed and created: they get no by-key query, `update` or `delete`. Tables whose columns are all key, like join tables, get no `update`.
 - **Types.** `bigint` and `numeric` columns are `String` so they keep their precision. MySQL `tinyint(1)` columns are `Boolean`, `json` and `jsonb` are `JSON`, and dates are `DateTime` in ISO 8601.
-- **MongoDB.** A collection has no schema, so its fields are inferred from a sample of 100 documents. `_id` becomes `id: ID!` and every other field is optional, and a field whose values have different types is `JSON`. An ID field named `author_id` or `authorId` is read as a reference to the `authors` collection.
+- **MongoDB.** A collection has no schema, so its fields are inferred from a sample of 100 documents. `_id` becomes `id: ID!` and every other field is optional, and a field whose values have different types is `JSON`. An ID field named `author_id` or `authorId` is read as a reference to the `author` or `authors` collection, and `category_id` to `categories`.
 
 ### Options
 
@@ -105,6 +109,12 @@ InverseModelModule.forRoot({
     ttlByTable: { audit_logs: 0, countries: 3600 }, // 0 leaves a table uncached
   },
   pagination: { defaultLimit: 100, maxLimit: 1000 },
+  // How tables and columns are named in the API; each function left out keeps the default.
+  naming: {
+    type: (table) => (table === 'audit.users' ? 'AuditUser' : defaultNaming.type(table)),
+    field: (column, table) => defaultNaming.field(column, table),
+    plural: (type) => defaultNaming.plural(type),
+  },
   // Anything else Apollo accepts, e.g. introspection, which is off when NODE_ENV=production.
   graphql: { introspection: true },
 });
@@ -120,7 +130,38 @@ InverseModelModule.forRoot({
 | `cache.keyPrefix` | `inverse:` | Prefix of every Redis key. |
 | `pagination.defaultLimit` | `100` | Rows a list returns without `limit`. |
 | `pagination.maxLimit` | `1000` | Largest `limit` accepted; larger values are clamped. |
+| `naming.type` | singular PascalCase | Type name of a table or collection, given its name as listed: schema-qualified where the database has schemas (`public.blog_posts`). |
+| `naming.field` | camelCase | API name of a column or document field, given the column and its table. |
+| `naming.plural` | English plural | Plural of a type name, used for lists, counts and to-many relations. |
 | `graphql` | | Apollo options other than the schema. |
+
+`defaultNaming` and the `singularize` and `pluralize` it uses are exported, so an override can build on them.
+
+#### Options from ConfigService
+
+`forRootAsync` takes the options from a factory, so they can come from `@nestjs/config` or any other provider:
+
+```ts
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { InverseModelModule } from '@nestjs-modules/inverse-model';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot(),
+    InverseModelModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        url: config.getOrThrow('DATABASE_URL'),
+        cache: config.get('REDIS_URL') ? { url: config.get('REDIS_URL') } : undefined,
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+`useClass` and `useExisting` work too, with a class whose `createInverseModelOptions()` returns the options. The options are also injectable through the `INVERSE_MODEL_OPTIONS` token.
 
 #### Security
 
@@ -136,7 +177,7 @@ InverseModelModule.forRoot({
   authorize: ({ operation, context }) =>
     operation === 'list' || context.req.user?.isAdmin === true,
   scope: ({ type, context }) =>
-    type === 'BlogPosts' ? { tenantId: { eq: context.req.user.tenantId } } : null,
+    type === 'BlogPost' ? { tenantId: { eq: context.req.user.tenantId } } : null,
 });
 ```
 

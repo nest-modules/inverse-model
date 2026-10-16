@@ -6,7 +6,7 @@ import type {
 } from '../adapters/database-adapter.interface';
 import { operationNames } from './operation-names';
 
-const SHARED_TYPE_DEFS = `scalar DateTime
+export const SHARED_TYPE_DEFS = `scalar DateTime
 scalar JSON
 
 enum SortDirection {

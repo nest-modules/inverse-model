@@ -37,8 +37,8 @@ describe.each(DATABASES)('%s adapter', (name, url) => {
       connection.models.find(
         (model) => model.name === modelName,
       ) as ModelDefinition;
-    authors = modelNamed('Authors');
-    posts = modelNamed('BlogPosts');
+    authors = modelNamed('Author');
+    posts = modelNamed('BlogPost');
   });
 
   afterAll(() => connection?.close());
@@ -49,8 +49,8 @@ describe.each(DATABASES)('%s adapter', (name, url) => {
 
   run('reads the tables or collections of the blog', () => {
     expect(connection.models.map((model) => model.name).sort()).toEqual([
-      'Authors',
-      'BlogPosts',
+      'Author',
+      'BlogPost',
     ]);
   });
 
@@ -73,14 +73,14 @@ describe.each(DATABASES)('%s adapter', (name, url) => {
     expect(posts.relations).toContainEqual({
       property: 'author',
       kind: 'one',
-      target: 'Authors',
+      target: 'Author',
       field: 'authorId',
       reference: 'id',
     });
     expect(authors.relations).toContainEqual({
       property: 'blogPosts',
       kind: 'many',
-      target: 'BlogPosts',
+      target: 'BlogPost',
       field: 'id',
       reference: 'authorId',
     });
@@ -195,7 +195,7 @@ describe('Redis cache over postgres', () => {
       },
     });
     authors = database.models.find(
-      (model) => model.name === 'Authors',
+      (model) => model.name === 'Author',
     ) as ModelDefinition;
   });
 

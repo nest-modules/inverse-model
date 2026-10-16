@@ -5,7 +5,7 @@ import {
   type FindOptionsWhere,
   type Table,
 } from 'typeorm';
-import { camelCase } from '../../utils/naming';
+import { defaultNaming, type Naming } from '../../utils/naming';
 import type {
   ConnectOptions,
   DatabaseAdapter,
@@ -16,7 +16,7 @@ import type {
   ModelDefinition,
 } from '../database-adapter.interface';
 import { addRelations, type ForeignKey } from '../relations';
-import { createEntitySchema, entityNameOf } from './create-entity-schema';
+import { createEntitySchema } from './create-entity-schema';
 import { whereSql } from './where-sql';
 
 type ColumnMetadata = EntityMetadata['columns'][number];
@@ -76,11 +76,14 @@ function modelOf(
   table: Table,
   fieldTypes: SqlAdapterOptions['fieldTypes'],
   overrides: FieldTypeOverrides,
+  naming: Naming,
 ): ModelDefinition {
   // A table without a key had every column made primary for TypeORM's sake.
   const hasPrimaryKey = table.columns.some((column) => column.isPrimary);
+  const name = naming.type(table.name);
   return {
-    name: entity.name,
+    name,
+    plural: naming.plural(name),
     source: table.name,
     fields: entity.columns.map((column) =>
       fieldOf(column, table, fieldTypes, overrides),
@@ -96,10 +99,13 @@ function modelOf(
 function foreignKeysOf(
   tables: Table[],
   models: Map<Table, ModelDefinition>,
+  naming: Naming,
 ): ForeignKey[] {
+  // A referenced table may be reported with or without its schema.
+  const unqualified = (name: string) => name.split('.').pop();
   const tableNamed = (name: string) =>
     tables.find((table) => table.name === name) ??
-    tables.find((table) => entityNameOf(table.name) === entityNameOf(name));
+    tables.find((table) => unqualified(table.name) === unqualified(name));
 
   return tables.flatMap((table) =>
     table.foreignKeys.flatMap((key) => {
@@ -108,9 +114,9 @@ function foreignKeysOf(
       return [
         {
           source: models.get(table) as ModelDefinition,
-          field: camelCase(key.columnNames[0]),
+          field: naming.field(key.columnNames[0], table.name),
           target: models.get(target) as ModelDefinition,
-          reference: camelCase(key.referencedColumnNames[0]),
+          reference: naming.field(key.referencedColumnNames[0], target.name),
         },
       ];
     }),
@@ -151,12 +157,29 @@ async function readTables(
   }
 }
 
+/** A unique entity name per table, since tables of two schemas may share a name. */
+function entityNamesOf(tables: Table[]): Map<string, string> {
+  const names = new Map<string, string>();
+  const taken = new Set<string>();
+  for (const table of tables) {
+    const base = table.name.replace(/\W/g, '_');
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}_${n}`;
+    taken.add(name);
+    names.set(table.name, name);
+  }
+  return names;
+}
+
 function connectionOver(
   dataSource: DataSource,
   models: ModelDefinition[],
+  entityNames: Map<string, string>,
 ): DatabaseConnection {
   const repository = (model: ModelDefinition) =>
-    dataSource.getRepository<DatabaseRecord>(model.name);
+    dataSource.getRepository<DatabaseRecord>(
+      entityNames.get(model.source) as string,
+    );
   // Keys come from the API already matched against the primary key columns.
   const byKey = (key: DatabaseRecord) =>
     key as FindOptionsWhere<DatabaseRecord>;
@@ -252,9 +275,15 @@ export function createSqlAdapter(options: SqlAdapterOptions): DatabaseAdapter {
         dataSourceOptions,
         options,
       );
+      const naming = connectOptions.naming ?? defaultNaming;
+      const entityNames = entityNamesOf(tables);
+      const entityNameOf = (table: Table) =>
+        entityNames.get(table.name) as string;
       const dataSource = await new DataSource({
         ...dataSourceOptions,
-        entities: tables.map(createEntitySchema),
+        entities: tables.map((table) =>
+          createEntitySchema(table, entityNameOf(table), naming),
+        ),
         synchronize: false,
       }).initialize();
 
@@ -262,16 +291,21 @@ export function createSqlAdapter(options: SqlAdapterOptions): DatabaseAdapter {
         tables.map((table) => [
           table,
           modelOf(
-            dataSource.getMetadata(entityNameOf(table.name)),
+            dataSource.getMetadata(entityNameOf(table)),
             table,
             options.fieldTypes,
             overrides,
+            naming,
           ),
         ]),
       );
-      addRelations(foreignKeysOf(tables, modelsByTable));
+      addRelations(foreignKeysOf(tables, modelsByTable, naming));
 
-      return connectionOver(dataSource, [...modelsByTable.values()]);
+      return connectionOver(
+        dataSource,
+        [...modelsByTable.values()],
+        entityNames,
+      );
     },
   };
 }

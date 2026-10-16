@@ -5,6 +5,7 @@ import type {
   MongoClientOptions,
   ObjectId,
 } from 'mongodb';
+import type { Naming } from '../../utils/naming';
 import type {
   ConnectOptions,
   DatabaseAdapter,
@@ -21,7 +22,7 @@ const SAMPLE_SIZE = 100;
 
 type Mongo = typeof import('mongodb');
 
-async function readModels(db: Db) {
+async function readModels(db: Db, naming?: Naming) {
   const collections = await db
     .listCollections({ type: 'collection' }, { nameOnly: true })
     .toArray();
@@ -35,7 +36,7 @@ async function readModels(db: Db) {
         .collection(name)
         .aggregate([{ $sample: { size: SAMPLE_SIZE } }])
         .toArray();
-      return inferModel(name, sample);
+      return inferModel(name, sample, naming);
     }),
   );
 }
@@ -155,7 +156,7 @@ export const mongodbAdapter: DatabaseAdapter = {
     ).connect();
     const db = client.db();
 
-    const models = await readModels(db).catch(async (error) => {
+    const models = await readModels(db, options.naming).catch(async (error) => {
       await client.close();
       throw error;
     });

@@ -19,8 +19,23 @@ describe('inferModel', () => {
   const typeOf = (property: string) =>
     model.fields.find((field) => field.property === property)?.type;
 
-  it('names the model after the collection', () => {
-    expect(model.name).toBe('BlogPosts');
+  it('names the model after the collection, in the singular', () => {
+    expect(model.name).toBe('BlogPost');
+    expect(model.plural).toBe('BlogPosts');
+  });
+
+  it('names the model and its fields as the naming option says', () => {
+    const custom = inferModel('blog_posts', [{ _id: 1, title: 'x' }], {
+      type: (collection) => `Mongo_${collection}`,
+      field: (name) => name.toUpperCase(),
+      plural: (type) => `${type}_list`,
+    });
+    expect(custom.name).toBe('Mongo_blog_posts');
+    expect(custom.plural).toBe('Mongo_blog_posts_list');
+    expect(custom.fields.map((field) => field.property)).toEqual([
+      'id',
+      'TITLE',
+    ]);
   });
 
   it('exposes _id as a required id the database fills in', () => {
@@ -64,6 +79,21 @@ describe('inferModel', () => {
     const keys = inferForeignKeys([authors, model, tags]);
     expect(keys).toEqual([
       { source: model, field: 'authorId', target: authors, reference: 'id' },
+    ]);
+  });
+
+  it('finds the collection of a key from its English plural', () => {
+    const categories = inferModel('categories', [{ _id: new ObjectId() }]);
+    const posts = inferModel('posts', [
+      { _id: new ObjectId(), category_id: new ObjectId() },
+    ]);
+    expect(inferForeignKeys([categories, posts])).toEqual([
+      {
+        source: posts,
+        field: 'categoryId',
+        target: categories,
+        reference: 'id',
+      },
     ]);
   });
 });

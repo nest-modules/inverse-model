@@ -1,4 +1,5 @@
-import { camelCase, pascalCase } from '../../utils/naming';
+import { pluralize } from '../../utils/inflection';
+import { defaultNaming, type Naming } from '../../utils/naming';
 import type {
   FieldDefinition,
   FieldType,
@@ -49,6 +50,7 @@ function mergeTypes(types: Set<FieldType>): FieldType {
 export function inferModel(
   collection: string,
   documents: readonly Record<string, unknown>[],
+  naming: Naming = defaultNaming,
 ): ModelDefinition {
   const typesByField = new Map<string, Set<FieldType>>();
   for (const document of documents) {
@@ -63,7 +65,7 @@ export function inferModel(
   const fields = [...typesByField].map(
     ([name, types]): FieldDefinition => ({
       name,
-      property: camelCase(name),
+      property: naming.field(name, collection),
       type: mergeTypes(types),
       isArray: false,
       isNullable: true,
@@ -71,8 +73,10 @@ export function inferModel(
     }),
   );
 
+  const name = naming.type(collection);
   return {
-    name: pascalCase(collection),
+    name,
+    plural: naming.plural(name),
     source: collection,
     fields: [ID_FIELD, ...fields],
     primaryKey: ['id'],
@@ -86,7 +90,7 @@ const normalize = (name: string) =>
 /**
  * MongoDB has no foreign keys, so they are guessed from names: an ID field
  * `author_id` or `authorId` references the collection `author`, `authors`
- * or `authores`, when one exists.
+ * or `authores`, and `category_id` the collection `categories`, when one exists.
  */
 export function inferForeignKeys(
   models: readonly ModelDefinition[],
@@ -95,7 +99,9 @@ export function inferForeignKeys(
     source.fields.flatMap((field) => {
       const base = field.name.match(/^(.+?)_?id$/i)?.[1];
       if (field.type !== 'ID' || field.name === '_id' || !base) return [];
-      const candidates = [base, `${base}s`, `${base}es`].map(normalize);
+      const candidates = [base, `${base}s`, `${base}es`, pluralize(base)].map(
+        normalize,
+      );
       const target = models.find((model) =>
         candidates.includes(normalize(model.source)),
       );

@@ -4,21 +4,39 @@ import {
   Logger,
   Module,
   type OnApplicationShutdown,
+  type Provider,
 } from '@nestjs/common';
 import type { DatabaseConnection } from '../adapters/database-adapter.interface';
 import { findAdapter } from '../adapters/find-adapter';
 import { withCache } from '../cache/cached-connection';
 import { createRedisStore } from '../cache/redis-store';
+import { assertValidNames } from '../graphql/validate-names';
 import { INVERSE_CONNECTION } from '../inverse-model.constants';
 import type { InverseModelOptions } from '../inverse-model.interfaces';
 import { openRestricted, redactorFor } from '../security/secure-api';
+import { resolveNaming } from '../utils/naming';
+import {
+  ConfigurableModuleClass,
+  INVERSE_MODEL_OPTIONS,
+  type InverseModelAsyncOptions,
+} from './database.module-definition';
 
 const logger = new Logger('InverseModel');
 
 async function connect(options: InverseModelOptions) {
   const connection = await openRestricted(options, () =>
-    findAdapter(options.url).connect(options.url, { ssl: options.ssl }),
+    findAdapter(options.url).connect(options.url, {
+      ssl: options.ssl,
+      naming: resolveNaming(options.naming),
+    }),
   );
+  // Only the exposed models need unique names; a hidden table cannot collide.
+  try {
+    assertValidNames(connection.models);
+  } catch (error) {
+    await connection.close();
+    throw error;
+  }
   logger.log(`Read ${connection.models.length} tables or collections`);
   if (!options.cache) return connection;
 
@@ -35,21 +53,41 @@ async function connect(options: InverseModelOptions) {
   });
 }
 
-/** Provides the connection opened by the adapter for the protocol of the URL, cached when asked. */
+const connectionProvider: Provider = {
+  provide: INVERSE_CONNECTION,
+  inject: [INVERSE_MODEL_OPTIONS],
+  useFactory: connect,
+};
+
+/** Adds the connection to the options module the builder makes. */
+function withConnection(module: DynamicModule): DynamicModule {
+  return {
+    ...module,
+    providers: [...(module.providers ?? []), connectionProvider],
+    exports: [INVERSE_MODEL_OPTIONS, INVERSE_CONNECTION],
+  };
+}
+
+/** Provides the options and the connection opened by the adapter for the protocol of the URL, cached when asked. */
 @Module({})
-export class DatabaseModule implements OnApplicationShutdown {
+export class DatabaseModule
+  extends ConfigurableModuleClass
+  implements OnApplicationShutdown
+{
   constructor(
     @Inject(INVERSE_CONNECTION) private readonly connection: DatabaseConnection,
-  ) {}
+  ) {
+    super();
+  }
 
   static forRoot(options: InverseModelOptions): DynamicModule {
-    return {
-      module: DatabaseModule,
-      providers: [
-        { provide: INVERSE_CONNECTION, useFactory: () => connect(options) },
-      ],
-      exports: [INVERSE_CONNECTION],
-    };
+    // biome-ignore lint/complexity/noThisInStatic: through super, the builder makes DatabaseModule the module of the result.
+    return withConnection(super.forRoot(options));
+  }
+
+  static forRootAsync(options: InverseModelAsyncOptions): DynamicModule {
+    // biome-ignore lint/complexity/noThisInStatic: through super, the builder makes DatabaseModule the module of the result.
+    return withConnection(super.forRootAsync(options));
   }
 
   onApplicationShutdown() {

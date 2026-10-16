@@ -15,7 +15,7 @@ const field = (
 });
 
 const posts: ModelDefinition = {
-  name: 'BlogPosts',
+  name: 'BlogPost',
   source: 'blog_posts',
   fields: [
     field('_id', 'id', 'ID'),

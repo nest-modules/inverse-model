@@ -1,4 +1,4 @@
-import { camelCase, pascalCase } from '../utils/naming';
+import { lowerFirst, pascalCase, pluralOf } from '../utils/naming';
 import type { ModelDefinition } from './database-adapter.interface';
 
 /** A single-column foreign key: `source.field` references `target.reference`. */
@@ -23,7 +23,7 @@ function unique(name: string, taken: Set<string>): string {
 
 /**
  * Adds both ends of each foreign key to its models: `blog_posts.author_id`
- * gives `BlogPosts.author` and `Authors.blogPosts`.
+ * gives `BlogPost.author` and `Author.blogPosts`.
  */
 export function addRelations(foreignKeys: readonly ForeignKey[]): void {
   for (const key of foreignKeys) {
@@ -32,7 +32,7 @@ export function addRelations(foreignKeys: readonly ForeignKey[]): void {
     // author_id and authorId become author; a key without that suffix is named after the target.
     const stripped = field.replace(/Id$/, '');
     const one =
-      stripped && stripped !== field ? stripped : camelCase(target.name);
+      stripped && stripped !== field ? stripped : lowerFirst(target.name);
     source.relations.push({
       property: unique(one, takenNames(source)),
       kind: 'one',
@@ -45,10 +45,9 @@ export function addRelations(foreignKeys: readonly ForeignKey[]): void {
     const siblings = foreignKeys.filter(
       (other) => other.source === source && other.target === target,
     );
+    const plural = lowerFirst(pluralOf(source));
     const many =
-      siblings.length > 1
-        ? `${camelCase(source.name)}By${pascalCase(field)}`
-        : camelCase(source.name);
+      siblings.length > 1 ? `${plural}By${pascalCase(field)}` : plural;
     target.relations.push({
       property: unique(many, takenNames(target)),
       kind: 'many',

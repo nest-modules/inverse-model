@@ -9,6 +9,7 @@ import type {
 import { operationNames } from './operation-names';
 import { relationLoader } from './relation-loader';
 import { GraphQLDateTime, GraphQLJSON } from './scalars';
+import { updatableFields } from './type-defs';
 
 export interface PaginationSettings {
   /** Rows returned when a list asks for no `limit`. */
@@ -105,12 +106,15 @@ export function createResolvers(
     if (model.primaryKey.length > 0) {
       Query[names.byPk] = (_parent, args) =>
         connection.findOne(model, keyOf(model, args));
-      Mutation[names.update] = (_parent, args) =>
-        connection.update(
-          model,
-          keyOf(model, args),
-          args.input as DatabaseRecord,
-        );
+      // A table whose columns are all key, like a join table, has nothing to update.
+      if (updatableFields(model).length > 0) {
+        Mutation[names.update] = (_parent, args) =>
+          connection.update(
+            model,
+            keyOf(model, args),
+            args.input as DatabaseRecord,
+          );
+      }
       Mutation[names.delete] = (_parent, args) =>
         connection.delete(model, keyOf(model, args));
     }
