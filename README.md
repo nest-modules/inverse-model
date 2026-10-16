@@ -1,17 +1,16 @@
 <p align="center">
-  <a href="http://nestjs.com/" target="blank">
-    <img src="https://nestjs.com/img/logo_text.svg" width="320" alt="Nest Logo" />
+  <a href="https://nestjs.com/" target="blank">
+    <img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" />
   </a>
 </p>
 
 <p align="center">
-  We are focus on understanding the connection string to the database and generating a startup project. <a href="">Inverse Model</a> library
+  <a href="https://github.com/nest-modules/inverse-model">Inverse Model</a> mounts a GraphQL API over an existing database from just its connection string.
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/org/nestjs-modules"><img src="https://img.shields.io/npm/v/@nestjs-modules/inverse.svg" alt="NPM Version" /></a>
-  <a href="https://www.npmjs.com/org/nestjs-modules"><img src="https://img.shields.io/npm/l/@nestjs-modules/inverse.svg" alt="Package License" /></a>
-  <a href="https://www.npmjs.com/org/nestjs-modules"><img src="https://img.shields.io/npm/dm/@nestjs-modules/inverse.svg" alt="NPM Downloads" /></a>
+  <a href="https://github.com/nest-modules/inverse-model/actions/workflows/ci.yml"><img src="https://github.com/nest-modules/inverse-model/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nest-modules/inverse-model" alt="License" /></a>
 </p>
 
 ### Usage

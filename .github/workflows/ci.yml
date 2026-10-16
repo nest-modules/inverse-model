@@ -23,7 +23,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm check
+      # Collects coverage and fails under each package's coverageThreshold.
       - run: pnpm test
+      - name: Upload coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage
+          path: |
+            apps/*/coverage
+            packages/*/coverage
+          if-no-files-found: warn
 
   adapters:
     name: Adapter integration tests
