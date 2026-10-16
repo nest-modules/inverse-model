@@ -64,32 +64,32 @@ export function restrictModels(
     !exclude.field(model, field) &&
     (!include || include.table(model) || include.field(model, field));
 
-  const kept = new Map(
-    models.filter(tableShown).map((model) => {
-      const fields = model.fields.filter((field) => fieldShown(model, field));
-      const properties = new Set(fields.map((field) => field.property));
-      const copy: ModelDefinition = {
-        ...model,
-        fields,
-        // A key with a hidden column cannot be asked for, so the table is treated as keyless.
-        primaryKey: model.primaryKey.every((key) => properties.has(key))
-          ? [...model.primaryKey]
-          : [],
-        relations: [...model.relations],
-        readOnly:
-          model.readOnly ||
-          rules.readOnly === true ||
-          (readOnly?.table(model) ?? false),
-      };
-      return [model.name, copy];
-    }),
-  );
+  // A list, not a map by name: duplicate names must reach the name check and fail there.
+  const kept = models.filter(tableShown).map((model) => {
+    const fields = model.fields.filter((field) => fieldShown(model, field));
+    const properties = new Set(fields.map((field) => field.property));
+    const copy: ModelDefinition = {
+      ...model,
+      fields,
+      // A key with a hidden column cannot be asked for, so the table is treated as keyless.
+      primaryKey: model.primaryKey.every((key) => properties.has(key))
+        ? [...model.primaryKey]
+        : [],
+      relations: [...model.relations],
+      readOnly:
+        model.readOnly ||
+        rules.readOnly === true ||
+        (readOnly?.table(model) ?? false),
+    };
+    return copy;
+  });
+  const byName = new Map(kept.map((model) => [model.name, model]));
 
   const hasProperty = (model: ModelDefinition, property: string) =>
     model.fields.some((field) => field.property === property);
-  for (const model of kept.values()) {
+  for (const model of kept) {
     model.relations = model.relations.filter((relation) => {
-      const target = kept.get(relation.target);
+      const target = byName.get(relation.target);
       return (
         target !== undefined &&
         hasProperty(model, relation.field) &&
@@ -97,7 +97,7 @@ export function restrictModels(
       );
     });
   }
-  return [...kept.values()];
+  return kept;
 }
 
 /** The connection with only the allowed models, refusing writes to read-only ones. */
