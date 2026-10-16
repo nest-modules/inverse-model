@@ -1,34 +1,47 @@
 import {
   type DynamicModule,
   Inject,
+  Logger,
   Module,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import type {
-  DatabaseAdapter,
-  DatabaseConnection,
-} from '../adapters/database-adapter.interface';
+import type { DatabaseConnection } from '../adapters/database-adapter.interface';
 import { findAdapter } from '../adapters/find-adapter';
+import { withCache } from '../cache/cached-connection';
+import { createRedisStore } from '../cache/redis-store';
 import { INVERSE_CONNECTION } from '../inverse-model.constants';
+import type { InverseModelOptions } from '../inverse-model.interfaces';
 
-/** Provides the connection opened by the adapter for the protocol of the URL. */
+const logger = new Logger('InverseModel');
+
+async function connect(options: InverseModelOptions) {
+  const connection = await findAdapter(options.url).connect(options.url, {
+    ssl: options.ssl,
+  });
+  logger.log(`Read ${connection.models.length} tables or collections`);
+  if (!options.cache) return connection;
+
+  return withCache(connection, createRedisStore(options.cache.url), {
+    ttl: options.cache.ttl ?? 60,
+    ttlByTable: options.cache.ttlByTable ?? {},
+    keyPrefix: options.cache.keyPrefix ?? 'inverse:',
+    onError: (error) =>
+      logger.warn(`Cache unavailable, reading the database: ${error}`),
+  });
+}
+
+/** Provides the connection opened by the adapter for the protocol of the URL, cached when asked. */
 @Module({})
 export class DatabaseModule implements OnApplicationShutdown {
   constructor(
     @Inject(INVERSE_CONNECTION) private readonly connection: DatabaseConnection,
   ) {}
 
-  static forRoot(
-    url: string,
-    adapters: readonly DatabaseAdapter[] = [],
-  ): DynamicModule {
+  static forRoot(options: InverseModelOptions): DynamicModule {
     return {
       module: DatabaseModule,
       providers: [
-        {
-          provide: INVERSE_CONNECTION,
-          useFactory: () => findAdapter(url, adapters).connect(url),
-        },
+        { provide: INVERSE_CONNECTION, useFactory: () => connect(options) },
       ],
       exports: [INVERSE_CONNECTION],
     };

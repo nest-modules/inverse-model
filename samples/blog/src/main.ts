@@ -3,8 +3,15 @@ import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { InverseModelModule } from '@nestjs-modules/inverse-model';
 
+const { DATABASE_URL, REDIS_URL } = process.env;
+
 @Module({
-  imports: [InverseModelModule.forRoot({ url: process.env.DATABASE_URL! })],
+  imports: [
+    InverseModelModule.forRoot({
+      url: DATABASE_URL!,
+      cache: REDIS_URL ? { url: REDIS_URL, ttl: 30 } : undefined,
+    }),
+  ],
 })
 class AppModule {}
 

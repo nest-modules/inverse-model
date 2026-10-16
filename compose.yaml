@@ -1,10 +1,11 @@
 # Databases with the blog sample loaded, and the sample app served over GraphQL.
 #
-#   docker compose up -d --wait postgres mysql mariadb mongodb
+#   docker compose up -d --wait postgres mysql mariadb sqlserver mongodb redis
 #   DATABASE_URL=mongodb://mongodb:27017/inverse_blog docker compose up -d --build --wait app
 #
 # Data is not kept between runs: `docker compose down` starts them fresh.
-# Host ports can be moved with POSTGRES_PORT, MYSQL_PORT, MARIADB_PORT, MONGODB_PORT and APP_PORT.
+# Host ports can be moved with POSTGRES_PORT, MYSQL_PORT, MARIADB_PORT, SQLSERVER_PORT,
+# MONGODB_PORT, REDIS_PORT and APP_PORT.
 services:
   postgres:
     image: postgres:17-alpine
@@ -52,6 +53,43 @@ services:
       interval: 2s
       retries: 60
 
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    # The image is only published for amd64; Apple silicon runs it under emulation.
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: Inverse_Passw0rd
+    ports: ['${SQLSERVER_PORT:-1433}:1433']
+    volumes:
+      - ./samples/blog/schema.mssql.sql:/schema.sql:ro
+    healthcheck:
+      # Creates the database and tables when missing, so healthy means seeded.
+      test:
+        - CMD
+        - /opt/mssql-tools18/bin/sqlcmd
+        - -C
+        - -b
+        - -S
+        - localhost
+        - -U
+        - sa
+        - -P
+        - Inverse_Passw0rd
+        - -i
+        - /schema.sql
+      interval: 5s
+      retries: 40
+      start_period: 20s
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ['${REDIS_PORT:-6379}:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      retries: 30
+
   mongodb:
     image: mongo:8.0
     ports: ['${MONGODB_PORT:-27017}:27017']
@@ -72,6 +110,8 @@ services:
     build: .
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://inverse:inverse@postgres:5432/inverse_blog}
+      # Empty turns the cache off.
+      REDIS_URL: ${REDIS_URL:-}
       PORT: 3000
     ports: ['${APP_PORT:-3000}:3000']
     healthcheck:

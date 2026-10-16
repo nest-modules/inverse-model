@@ -1,5 +1,5 @@
 import { Decimal128, ObjectId } from 'mongodb';
-import { inferModel } from '../adapters/mongodb/infer-model';
+import { inferForeignKeys, inferModel } from '../adapters/mongodb/infer-model';
 
 describe('inferModel', () => {
   const model = inferModel('blog_posts', [
@@ -56,5 +56,14 @@ describe('inferModel', () => {
     expect(others.every((field) => field.isNullable && !field.hasDefault)).toBe(
       true,
     );
+  });
+
+  it('guesses foreign keys from ID fields named after a collection', () => {
+    const authors = inferModel('authors', [{ _id: new ObjectId() }]);
+    const tags = inferModel('tags', [{ _id: new ObjectId(), label: 'x' }]);
+    const keys = inferForeignKeys([authors, model, tags]);
+    expect(keys).toEqual([
+      { source: model, field: 'authorId', target: authors, reference: 'id' },
+    ]);
   });
 });

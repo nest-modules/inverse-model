@@ -13,11 +13,14 @@ const generationOf = (column: TableColumn) =>
     ? 'increment'
     : column.generationStrategy;
 
-function columnOptions(column: TableColumn): EntitySchemaColumnOptions {
+function columnOptions(
+  column: TableColumn,
+  primary: boolean,
+): EntitySchemaColumnOptions {
   return {
     name: column.name,
     type: column.type as ColumnType,
-    primary: column.isPrimary,
+    primary,
     nullable: column.isNullable,
     array: column.isArray,
     enum: column.enum,
@@ -27,16 +30,24 @@ function columnOptions(column: TableColumn): EntitySchemaColumnOptions {
   };
 }
 
-/** Entity named after the table (`blog_posts` → `BlogPosts`), one camelCase property per column. */
+/** `public.blog_posts` → `BlogPosts` */
+export const entityNameOf = (tableName: string) =>
+  pascalCase(tableName.split('.').pop() ?? tableName);
+
+/**
+ * Entity named after the table, one camelCase property per column. TypeORM
+ * needs a primary key, so a table without one gets every column as its key;
+ * such a table is only listed, never addressed by key.
+ */
 export function createEntitySchema(table: Table): EntitySchema {
-  const tableName = table.name.split('.').pop() ?? table.name;
+  const hasPrimaryKey = table.columns.some((column) => column.isPrimary);
   return new EntitySchema({
-    name: pascalCase(tableName),
+    name: entityNameOf(table.name),
     tableName: table.name,
     columns: Object.fromEntries(
       table.columns.map((column) => [
         camelCase(column.name),
-        columnOptions(column),
+        columnOptions(column, hasPrimaryKey ? column.isPrimary : true),
       ]),
     ),
   });

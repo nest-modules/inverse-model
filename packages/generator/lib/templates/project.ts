@@ -17,6 +17,7 @@ const DEPENDENCIES = {
 
 const POSTGRES_DRIVER = { pg: '8.23.1' };
 const MYSQL_DRIVER = { mysql2: '3.24.6' };
+const SQLSERVER_DRIVER = { mssql: '12.7.2' };
 const MONGODB_DRIVER = { mongodb: '7.7.0' };
 
 // The driver package each adapter of the library loads.
@@ -25,6 +26,8 @@ const DRIVERS: Record<string, Record<string, string>> = {
   postgresql: POSTGRES_DRIVER,
   mysql: MYSQL_DRIVER,
   mariadb: MYSQL_DRIVER,
+  mssql: SQLSERVER_DRIVER,
+  sqlserver: SQLSERVER_DRIVER,
   mongodb: MONGODB_DRIVER,
   'mongodb+srv': MONGODB_DRIVER,
 };

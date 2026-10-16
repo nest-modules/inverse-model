@@ -8,14 +8,18 @@ import { INVERSE_CONNECTION } from './inverse-model.constants';
 import type { InverseModelOptions } from './inverse-model.interfaces';
 
 /**
- * Mounts a GraphQL API over an existing database: on start the adapter for
- * the protocol of the URL reads its tables or collections, and one
- * `create<Model>` mutation is exposed per table or collection.
+ * Mounts a GraphQL API over an existing database: on start it reads the
+ * tables or collections behind the URL, their keys and foreign keys, and
+ * serves queries, mutations and relations for all of them.
  */
 @Module({})
 export class InverseModelModule {
   static forRoot(options: InverseModelOptions): DynamicModule {
-    const database = DatabaseModule.forRoot(options.url, options.adapters);
+    const database = DatabaseModule.forRoot(options);
+    const pagination = {
+      defaultLimit: options.pagination?.defaultLimit ?? 100,
+      maxLimit: options.pagination?.maxLimit ?? 1000,
+    };
     return {
       module: InverseModelModule,
       global: true,
@@ -27,7 +31,7 @@ export class InverseModelModule {
           inject: [INVERSE_CONNECTION],
           useFactory: (connection: DatabaseConnection) => ({
             ...options.graphql,
-            ...createSchema(connection),
+            ...createSchema(connection, pagination),
           }),
         }),
       ],

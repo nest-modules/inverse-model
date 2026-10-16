@@ -1,4 +1,3 @@
-import type { DatabaseAdapter } from '../adapters/database-adapter.interface';
 import { findAdapter } from '../adapters/find-adapter';
 
 describe('findAdapter', () => {
@@ -7,24 +6,17 @@ describe('findAdapter', () => {
     ['postgresql://localhost/blog', 'postgres'],
     ['mysql://localhost/blog', 'mysql'],
     ['mariadb://localhost/blog', 'mariadb'],
+    ['mssql://localhost/blog', 'sqlserver'],
+    ['sqlserver://localhost/blog', 'sqlserver'],
     ['mongodb://localhost/blog', 'mongodb'],
     ['mongodb+srv://cluster.example.com/blog', 'mongodb'],
   ])('picks the adapter of %s', (url, name) => {
     expect(findAdapter(url).name).toBe(name);
   });
 
-  it('prefers custom adapters over the built-in ones', () => {
-    const custom: DatabaseAdapter = {
-      name: 'custom-postgres',
-      protocols: ['postgres'],
-      connect: jest.fn(),
-    };
-    expect(findAdapter('postgres://localhost/blog', [custom])).toBe(custom);
-  });
-
   it('lists the supported protocols for an unknown one', () => {
-    expect(() => findAdapter('sqlserver://localhost/blog')).toThrow(
-      /Unsupported database protocol: sqlserver \(supported: postgres, postgresql, /,
+    expect(() => findAdapter('oracle://localhost/blog')).toThrow(
+      /Unsupported database protocol: oracle \(supported: postgres, postgresql, /,
     );
   });
 });

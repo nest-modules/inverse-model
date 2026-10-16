@@ -7,6 +7,12 @@ const TABLES_QUERY = `
   FROM information_schema.tables
   WHERE table_type = 'BASE TABLE' AND table_schema = DATABASE()`;
 
+// MySQL stores boolean columns as tinyint(1), which TypeORM reports as plain tinyint.
+const BOOLEAN_COLUMNS_QUERY = `
+  SELECT table_name AS table_name, column_name AS column_name, 'Boolean' AS field_type
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND column_type = 'tinyint(1)'`;
+
 const FIELD_TYPES: Record<string, FieldType> = {
   tinyint: 'Int',
   smallint: 'Int',
@@ -31,6 +37,7 @@ export const mysqlAdapter = createSqlAdapter({
   protocols: ['mysql'],
   type: 'mysql',
   tablesQuery: TABLES_QUERY,
+  fieldTypeOverridesQuery: BOOLEAN_COLUMNS_QUERY,
   fieldTypes: FIELD_TYPES,
 });
 
@@ -40,5 +47,6 @@ export const mariadbAdapter = createSqlAdapter({
   protocols: ['mariadb'],
   type: 'mariadb',
   tablesQuery: TABLES_QUERY,
+  fieldTypeOverridesQuery: BOOLEAN_COLUMNS_QUERY,
   fieldTypes: FIELD_TYPES,
 });

@@ -4,6 +4,7 @@ import type {
   FieldType,
   ModelDefinition,
 } from '../database-adapter.interface';
+import type { ForeignKey } from '../relations';
 
 const ID_FIELD: FieldDefinition = {
   name: '_id',
@@ -70,5 +71,37 @@ export function inferModel(
     }),
   );
 
-  return { name: pascalCase(collection), fields: [ID_FIELD, ...fields] };
+  return {
+    name: pascalCase(collection),
+    source: collection,
+    fields: [ID_FIELD, ...fields],
+    primaryKey: ['id'],
+    relations: [],
+  };
+}
+
+const normalize = (name: string) =>
+  name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * MongoDB has no foreign keys, so they are guessed from names: an ID field
+ * `author_id` or `authorId` references the collection `author`, `authors`
+ * or `authores`, when one exists.
+ */
+export function inferForeignKeys(
+  models: readonly ModelDefinition[],
+): ForeignKey[] {
+  return models.flatMap((source) =>
+    source.fields.flatMap((field) => {
+      const base = field.name.match(/^(.+?)_?id$/i)?.[1];
+      if (field.type !== 'ID' || field.name === '_id' || !base) return [];
+      const candidates = [base, `${base}s`, `${base}es`].map(normalize);
+      const target = models.find((model) =>
+        candidates.includes(normalize(model.source)),
+      );
+      return target
+        ? [{ source, field: field.property, target, reference: 'id' }]
+        : [];
+    }),
+  );
 }

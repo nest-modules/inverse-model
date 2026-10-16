@@ -18,6 +18,7 @@ describe('generateProject', () => {
   it.each([
     ['postgres://localhost/blog', 'pg'],
     ['mysql://localhost/blog', 'mysql2'],
+    ['mssql://localhost/blog', 'mssql'],
     ['mongodb+srv://cluster.example.com/blog', 'mongodb'],
   ])('adds the driver of %s', (databaseUrl, driver) => {
     const pkg = generateProject({ name: 'blog-api', databaseUrl }).find(
@@ -30,7 +31,7 @@ describe('generateProject', () => {
 
   it('rejects a database no adapter handles', () => {
     expect(() =>
-      generateProject({ name: 'x', databaseUrl: 'sqlserver://localhost/x' }),
-    ).toThrow('Unsupported database protocol: sqlserver');
+      generateProject({ name: 'x', databaseUrl: 'oracle://localhost/x' }),
+    ).toThrow('Unsupported database protocol: oracle');
   });
 });

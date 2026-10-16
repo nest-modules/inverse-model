@@ -30,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Start the databases
-        run: docker compose up -d --wait postgres mysql mariadb mongodb
+      - name: Start the databases and Redis
+        run: docker compose up -d --wait postgres mysql mariadb sqlserver mongodb redis
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -43,34 +43,56 @@ jobs:
           POSTGRES_URL: postgres://inverse:inverse@localhost:5432/inverse_blog
           MYSQL_URL: mysql://inverse:inverse@localhost:3306/inverse_blog
           MARIADB_URL: mariadb://inverse:inverse@localhost:3307/inverse_blog
+          SQLSERVER_URL: mssql://sa:Inverse_Passw0rd@localhost:1433/inverse_blog?trustServerCertificate=true
           MONGODB_URL: mongodb://localhost:27017/inverse_blog
+          REDIS_URL: redis://localhost:6379
       - name: Database logs
         if: failure()
-        run: docker compose logs postgres mysql mariadb mongodb
+        run: docker compose logs postgres mysql mariadb sqlserver mongodb redis
 
   docker:
-    name: Docker image on ${{ matrix.database }}
+    name: Docker image on ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - database: postgres
+          - name: postgres
+            services: postgres
             url: postgres://inverse:inverse@postgres:5432/inverse_blog
-          - database: mysql
+          - name: postgres with Redis cache
+            services: postgres redis
+            url: postgres://inverse:inverse@postgres:5432/inverse_blog
+            redis: redis://redis:6379
+          - name: mysql
+            services: mysql
             url: mysql://inverse:inverse@mysql:3306/inverse_blog
-          - database: mariadb
+          - name: mariadb
+            services: mariadb
             url: mariadb://inverse:inverse@mariadb:3306/inverse_blog
-          - database: mongodb
+          - name: sqlserver
+            services: sqlserver
+            url: mssql://sa:Inverse_Passw0rd@sqlserver:1433/inverse_blog?trustServerCertificate=true
+          - name: mongodb
+            services: mongodb
             url: mongodb://mongodb:27017/inverse_blog
+          - name: mongodb with Redis cache
+            services: mongodb redis
+            url: mongodb://mongodb:27017/inverse_blog
+            redis: redis://redis:6379
     steps:
       - uses: actions/checkout@v5
-      - run: docker compose up -d --wait ${{ matrix.database }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: docker compose up -d --wait ${{ matrix.services }}
       - name: Build and start the app
         run: docker compose up -d --build --wait app
         env:
           DATABASE_URL: ${{ matrix.url }}
-      - run: scripts/smoke-test.sh
+          REDIS_URL: ${{ matrix.redis }}
+      - name: Exercise the GraphQL API
+        run: node scripts/smoke-test.mjs
       - name: App logs
         if: failure()
-        run: docker compose logs app ${{ matrix.database }}
+        run: docker compose logs app ${{ matrix.services }}
