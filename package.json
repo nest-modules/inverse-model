@@ -1,9 +1,22 @@
 {
-  "name": "@nestjs-modules/inverse",
+  "name": "@nestjs-modules/inverse-monorepo",
   "version": "0.0.0",
-  "description": "We are focus on understanding the connection string to the database and generating a startup project.",
-  "main": "index.js",
+  "private": true,
+  "packageManager": "pnpm@11.17.0",
+  "description": "Reads an existing database and generates a NestJS GraphQL starter project from it.",
   "repository": "git@github.com:nest-modules/inverse-model.git",
   "author": "juandav <e.juandav@gmail.com>",
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "check": "turbo run check",
+    "format": "biome format --write .",
+    "check:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "turbo": "2.11.8",
+    "typescript": "6.0.3"
+  }
 }

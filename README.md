@@ -14,13 +14,31 @@
   <a href="https://www.npmjs.com/org/nestjs-modules"><img src="https://img.shields.io/npm/dm/@nestjs-modules/inverse.svg" alt="NPM Downloads" /></a>
 </p>
 
-### Installation
+### Usage
 
 ```sh
 npm install -g @nestjs-modules/inverse
-#or
-yarn global add @nestjs-modules/inverse
+inverse generate postgres://user:pass@localhost:5432/blog -o blog-api
+cd blog-api && npm install && npm run build && npm start
 ```
+
+The generated project is a NestJS GraphQL API with one `create<Table>` mutation per table.
+
+### Development
+
+```sh
+pnpm install
+pnpm build
+pnpm test
+pnpm check
+```
+
+| Path | Package | What it does |
+|---|---|---|
+| `apps/cli` | `@nestjs-modules/inverse` | `inverse` command, a NestJS app built with nest-commander |
+| `packages/introspector` | `@nestjs-modules/inverse-introspector` | Reads a database into a driver-neutral `DatabaseSchema` (PostgreSQL for now) |
+| `packages/generator` | `@nestjs-modules/inverse-generator` | Turns a `DatabaseSchema` into the files of the generated project |
+| `samples/blog` | | Small schema to try the generator against |
 
 ### License
 

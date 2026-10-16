@@ -1,0 +1,27 @@
+{
+  "name": "@nestjs-modules/inverse-generator",
+  "version": "0.0.0",
+  "description": "Turns a database schema into the files of a NestJS GraphQL project.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "biome check .",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@nestjs-modules/inverse-introspector": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "24.19.2",
+    "jest": "30.5.2",
+    "rimraf": "6.1.3",
+    "ts-jest": "29.4.14",
+    "typescript": "6.0.3"
+  }
+}
