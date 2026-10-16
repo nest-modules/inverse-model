@@ -1,7 +1,7 @@
 import type { GeneratedFile } from '../generate-project';
-import type { EntityNames } from './entity';
 
 const DEPENDENCIES = {
+  '@nestjs-modules/inverse-model': '^0.0.0',
   '@apollo/server': '5.5.1',
   '@as-integrations/express5': '1.1.2',
   '@nestjs/apollo': '14.0.3',
@@ -13,11 +13,11 @@ const DEPENDENCIES = {
   pg: '8.23.1',
   'reflect-metadata': '0.2.2',
   rxjs: '7.8.2',
+  typeorm: '1.1.2',
 };
 
 const DEV_DEPENDENCIES = {
   '@types/node': '24.19.2',
-  '@types/pg': '8.23.1',
   typescript: '6.0.3',
 };
 
@@ -27,7 +27,6 @@ const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 export function projectFiles(
   name: string,
   databaseUrl: string,
-  entities: EntityNames[],
 ): GeneratedFile[] {
   return [
     {
@@ -67,8 +66,7 @@ export function projectFiles(
     { path: '.gitignore', content: 'node_modules\ndist\n.env\n' },
     { path: '.env', content: `DATABASE_URL=${databaseUrl}\nPORT=3000\n` },
     { path: 'src/main.ts', content: mainFile() },
-    { path: 'src/app.resolver.ts', content: appResolverFile() },
-    { path: 'src/app.module.ts', content: appModuleFile(entities) },
+    { path: 'src/app.module.ts', content: appModuleFile() },
   ];
 }
 
@@ -84,43 +82,12 @@ async function bootstrap() {
 bootstrap();
 `;
 
-// GraphQL requires a Query root type; the entry points of the API are the create mutations.
-const appResolverFile =
-  () => `import { Query, Resolver } from '@nestjs/graphql';
-
-@Resolver()
-export class AppResolver {
-  @Query(() => String)
-  health(): string {
-    return 'ok';
-  }
-}
-`;
-
-function appModuleFile(entities: EntityNames[]): string {
-  const imports = entities.map(
-    ({ className, fileName }) =>
-      `import { ${className}Module } from './${fileName}/${fileName}.module';`,
-  );
-  const modules = entities.map(({ className }) => `    ${className}Module,`);
-  return `import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+const appModuleFile =
+  () => `import { InverseModelModule } from '@nestjs-modules/inverse-model';
 import { Module } from '@nestjs/common';
-import { GraphQLModule } from '@nestjs/graphql';
-import { AppResolver } from './app.resolver';
-import { DatabaseModule } from './database/database.module';
-${imports.join('\n')}
 
 @Module({
-  imports: [
-    GraphQLModule.forRoot<ApolloDriverConfig>({
-      driver: ApolloDriver,
-      autoSchemaFile: true,
-    }),
-    DatabaseModule,
-${modules.join('\n')}
-  ],
-  providers: [AppResolver],
+  imports: [InverseModelModule.forRoot({ url: process.env.DATABASE_URL! })],
 })
 export class AppModule {}
 `;
-}

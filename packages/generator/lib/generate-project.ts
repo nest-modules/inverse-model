@@ -1,6 +1,3 @@
-import type { DatabaseSchema } from '@nestjs-modules/inverse-introspector';
-import { databaseFiles } from './templates/database';
-import { entityFiles, entityNames } from './templates/entity';
 import { projectFiles } from './templates/project';
 
 export interface GeneratedFile {
@@ -15,15 +12,6 @@ export interface GenerateOptions {
   databaseUrl: string;
 }
 
-/** Builds every file of a NestJS GraphQL project that exposes one `create<Table>` mutation per table. */
-export function generateProject(
-  schema: DatabaseSchema,
-  options: GenerateOptions,
-): GeneratedFile[] {
-  const entities = schema.tables.map(entityNames);
-  return [
-    ...projectFiles(options.name, options.databaseUrl, entities),
-    ...databaseFiles(),
-    ...schema.tables.flatMap(entityFiles),
-  ];
-}
+/** Builds the files of a NestJS project that mounts `InverseModelModule` over the database. */
+export const generateProject = (options: GenerateOptions): GeneratedFile[] =>
+  projectFiles(options.name, options.databaseUrl);

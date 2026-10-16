@@ -1,0 +1,57 @@
+{
+  "name": "@nestjs-modules/inverse-model",
+  "version": "0.0.0",
+  "description": "Mounts a GraphQL API over an existing database from its connection string.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "biome check .",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@apollo/server": "5.5.1",
+    "@as-integrations/express5": "1.1.2",
+    "@nestjs/apollo": "14.0.3",
+    "@nestjs/common": "12.1.3",
+    "@nestjs/core": "12.1.3",
+    "@nestjs/graphql": "14.0.3",
+    "@nestjs/platform-express": "12.1.3",
+    "@types/jest": "30.0.0",
+    "@types/node": "24.19.2",
+    "graphql": "17.0.2",
+    "jest": "30.5.2",
+    "pg": "8.23.1",
+    "reflect-metadata": "0.2.2",
+    "rimraf": "6.1.3",
+    "rxjs": "7.8.2",
+    "ts-jest": "29.4.14",
+    "typeorm": "1.1.2",
+    "typescript": "6.0.3"
+  },
+  "peerDependencies": {
+    "@apollo/server": "^5.0.0",
+    "@nestjs/apollo": "^14.0.0",
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "@nestjs/graphql": "^14.0.0",
+    "graphql": "^16.11.0 || ^17.0.0",
+    "mysql2": "^3.0.0",
+    "pg": "^8.5.1",
+    "typeorm": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    }
+  }
+}

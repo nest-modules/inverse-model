@@ -16,13 +16,21 @@
 
 ### Usage
 
+Give the module a connection string. On start it reads the tables with TypeORM and serves a GraphQL API with one `create<Table>` mutation per table.
+
+```ts
+@Module({
+  imports: [InverseModelModule.forRoot({ url: process.env.DATABASE_URL! })],
+})
+export class AppModule {}
+```
+
+Or let the CLI write that starter project:
+
 ```sh
 npm install -g @nestjs-modules/inverse
 inverse generate postgres://user:pass@localhost:5432/blog -o blog-api
-cd blog-api && npm install && npm run build && npm start
 ```
-
-The generated project is a NestJS GraphQL API with one `create<Table>` mutation per table.
 
 ### Development
 
@@ -35,10 +43,10 @@ pnpm check
 
 | Path | Package | What it does |
 |---|---|---|
-| `apps/cli` | `@nestjs-modules/inverse` | `inverse` command, a NestJS app built with nest-commander |
-| `packages/introspector` | `@nestjs-modules/inverse-introspector` | Reads a database into a driver-neutral `DatabaseSchema` (PostgreSQL for now) |
-| `packages/generator` | `@nestjs-modules/inverse-generator` | Turns a `DatabaseSchema` into the files of the generated project |
-| `samples/blog` | | Small schema to try the generator against |
+| `packages/inverse-model` | `@nestjs-modules/inverse-model` | The library: reads the database with TypeORM and mounts the GraphQL API |
+| `apps/cli` | `@nestjs-modules/inverse` | `inverse` command that writes a starter project using the library |
+| `packages/generator` | `@nestjs-modules/inverse-generator` | Files of that starter project |
+| `samples/blog` | | Small schema to try it against |
 
 ### License
 

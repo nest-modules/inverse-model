@@ -17,6 +17,3 @@ export const camelCase = (name: string) => {
   const pascal = pascalCase(name);
   return pascal[0].toLowerCase() + pascal.slice(1);
 };
-
-/** `blog_posts` → `blog-posts` */
-export const kebabCase = (name: string) => words(name).join('-');

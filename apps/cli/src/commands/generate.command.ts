@@ -4,7 +4,6 @@ import {
   generateProject,
   writeProject,
 } from '@nestjs-modules/inverse-generator';
-import { introspect } from '@nestjs-modules/inverse-introspector';
 import { Command, CommandRunner, Option } from 'nest-commander';
 
 interface GenerateOptions {
@@ -12,15 +11,17 @@ interface GenerateOptions {
   name?: string;
 }
 
+const databaseName = (url: string) => new URL(url).pathname.replace(/^\//, '');
+
 @Command({
   name: 'generate',
   arguments: '<connection-string>',
-  description: 'Generate a NestJS GraphQL project from an existing database',
+  description:
+    'Generate a NestJS project that serves the database over GraphQL',
 })
 export class GenerateCommand extends CommandRunner {
   async run([connectionString]: string[], options: GenerateOptions) {
-    const schema = await introspect(connectionString);
-    const name = options.name ?? schema.name;
+    const name = options.name ?? databaseName(connectionString);
     const outDir = resolve(options.out ?? name);
 
     const existing = await readdir(outDir).catch(() => []);
@@ -28,12 +29,12 @@ export class GenerateCommand extends CommandRunner {
       throw new Error(`${outDir} is not empty`);
     }
 
-    const files = generateProject(schema, {
+    const files = generateProject({
       name,
       databaseUrl: connectionString,
     });
     await writeProject(outDir, files);
-    console.log(`Generated ${schema.tables.length} tables into ${outDir}`);
+    console.log(`Generated ${name} into ${outDir}`);
   }
 
   @Option({
